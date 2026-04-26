@@ -50,7 +50,23 @@ const Exe = @import("HEAT").addExecutable(b, .{
     // You can enter target and optimize here instead of b.dependency
 });
 ```
-Now you can do anything with this Executable(Exe)
+Now you can use Heat in your app like this:
+**MyApp.zig**
+```zig
+const std = @import("std");
+const Self = @This();
+const Engine = @import("Engine");
+const Conf = @import("Conf"); // if you want to change preinit values
+
+pub fn init(this: *Self, engine: *Engine, args: std.process.Args) !void {
+    _ = this;
+    _ = args;
+    try engine.IO.print("Hello, {s}\n", .{"world!"});
+}
+pub fn deinit(this: *Self) void {
+    _ = this;
+}
+```
 
 ## ⚙️ Configure
 Change engine's parameters like release mode, singlethreaded mode, turn on/off some optional dependencies just by editing *config.zig*
