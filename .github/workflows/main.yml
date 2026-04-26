@@ -1,0 +1,26 @@
+name: CI
+
+on:
+    push:
+        branches: [ main ]
+    pull_request:
+        branches: [ main ]
+    workflow_dispatch:
+
+jobs:
+    test:
+        strategy:
+            matrix:
+                os: [ubuntu-latest, windows-latest]
+        runs-on: ${{ matrix.os }}
+        name: Build and Test (${{ matrix.os }})
+        steps:
+          - name: Checkout
+            uses: actions/checkout@v3
+          - name: Setup Zig
+            uses: mlugg/setup-zig@v2
+            with:
+                zig-version: '0.16.0'
+          - name: Build and run tests
+            run: zig build test
+
