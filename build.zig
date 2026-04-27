@@ -57,6 +57,7 @@ const ExecutableConfig = struct {
 };
 
 pub fn addExecutable(b: *std.Build, config: ExecutableConfig) *std.Build.Step.Compile {
+    Config.profile();
     const options_step = b.addOptions();
     options_step.addOption(bool, "singlethreaded", options.singlethreaded);
     options_step.addOption(bool, "runtime_safety", options.runtime_safety);

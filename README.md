@@ -1,6 +1,6 @@
 # HEAT
 
-![GitHub stars](https://img.shields.io/github/stars/Freziyt223/HEAT?style=for-the-badge&logo=github) ![GitHub forks](https://img.shields.io/github/forks/Freziyt223/HEAT?style=for-the-badge&logo=github) ![GitHub issues](https://img.shields.io/github/issues/Freziyt223/HEAT?style=for-the-badge&logo=github) ![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge) ![Contributors](https://img.shields.io/github/contributors/Freziyt223/HEAT)
+![GitHub stars](https://img.shields.io/github/stars/Freziyt223/HEAT?style=for-the-badge&logo=github) ![GitHub forks](https://img.shields.io/github/forks/Freziyt223/HEAT?style=for-the-badge&logo=github) ![GitHub issues](https://img.shields.io/github/issues/Freziyt223/HEAT?style=for-the-badge&logo=github) ![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge) ![Contributors](https://img.shields.io/github/contributors/Freziyt223/HEAT) ![Build Status](https://github.com/Freziyt223/HEAT/actions/workflows/main.yml/badge.svg)
 
 ## 📑 Table of Contents
 
@@ -22,7 +22,7 @@ std.Build.StandartOptimizeOptions(.{}); Doesn't pass optimize correctly to the d
 ## ⚡ Quick Start
 Install [zig 0.16.0 or higher](https://ziglang.org/learn/getting-started/)
 Then make a project by using `zig init` or get into existing one
-add those lines to
+add those lines to  
 **build.zig.zon**
 ```zig
 .{
@@ -52,7 +52,7 @@ const Exe = @import("HEAT").addExecutable(b, .{
     // You can enter target and optimize here instead of b.dependency
 });
 ```
-Now you can use Heat in your app like this:
+Now you can use Heat in your app like this:  
 **MyApp.zig**
 ```zig
 const std = @import("std");
@@ -71,11 +71,27 @@ pub fn deinit(this: *Self) void {
 ```
 
 ## ⚙️ Configure
-Change engine's parameters like release mode, singlethreaded mode, turn on/off some optional dependencies just by editing *config.zig*
+Change engine's parameters like release mode, singlethreaded mode, turn on/off some optional dependencies just by editing *config.zig*  
+Even from your build.zig code:
+```
+const HEAT = b.dependency("HEAT", .{...});
 
+const HEAT_build = @import("HEAT); // Has to be exact same name as in b.dependency()
+// Now you can edit the config directly
+HEAT_build.Config.singlethreaded = true;
+
+
+const Config = HEAT_build.Config;
+// Or make separate function to change whole config directly
+HEAT_build.Config.profile = &load_profile;
+fn load_profile() {
+    Config.singlethreaded = false;
+    Config.optimize_mode = .ReleaseSmall;
+}
+```  
+All those config options and options passed on build are loaded into `Engine.Conf.BuildOptions`
 
 ## 📖 Example
-
 ` Make sure you have zig 0.16.0 or higher`  
 **Open your terminal**
 ```bash
@@ -86,10 +102,8 @@ git clone https://github.com/Freziyt223/HEAT.git
 # Go into clonned directory
 cd HEAT
 
-# Build the engine!
-zig build
-
-# (See Development Setup below)
+# Build and run the example!
+zig build run
 ```
 
 ## 📁 Project Structure
