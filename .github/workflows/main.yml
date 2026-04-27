@@ -2,9 +2,9 @@ name: Try building on pull
 
 on:
     push:
-        branches: [ main ]
+        branches: [ master ]
     pull_request:
-        branches: [ main ]
+        branches: [ master ]
     workflow_dispatch:
 
 jobs:
@@ -23,4 +23,3 @@ jobs:
                 version: '0.16.0'
           - name: Build
             run: zig build
-
