@@ -1,6 +1,6 @@
 # HEAT
 
-![GitHub stars](https://img.shields.io/github/stars/Freziyt223/HEAT?style=for-the-badge&logo=github) ![GitHub forks](https://img.shields.io/github/forks/Freziyt223/HEAT?style=for-the-badge&logo=github) ![GitHub issues](https://img.shields.io/github/issues/Freziyt223/HEAT?style=for-the-badge&logo=github) ![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)
+![GitHub stars](https://img.shields.io/github/stars/Freziyt223/HEAT?style=for-the-badge&logo=github) ![GitHub forks](https://img.shields.io/github/forks/Freziyt223/HEAT?style=for-the-badge&logo=github) ![GitHub issues](https://img.shields.io/github/issues/Freziyt223/HEAT?style=for-the-badge&logo=github) ![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge) ![Contributors](https://img.shields.io/github/contributors/Freziyt223/HEAT)
 
 ## 📑 Table of Contents
 
@@ -20,7 +20,9 @@ Heat is a free game engine designed with a core focus on modularity. It's design
 std.Build.StandartOptimizeOptions(.{}); Doesn't pass optimize correctly to the dependencies! Use b.option(bool, "optimize", ...) or set it manually.
 
 ## ⚡ Quick Start
-
+Install [zig 0.16.0 or higher](https://ziglang.org/learn/getting-started/)
+Then make a project by using `zig init` or get into existing one
+add those lines to
 **build.zig.zon**
 ```zig
 .{
@@ -54,6 +56,7 @@ Now you can do anything with this Executable(Exe)
 
 ## ⚙️ Configure
 Change engine's parameters like release mode, singlethreaded mode, turn on/off some optional dependencies just by editing *config.zig*
+
 
 ## 📖 Example
 
@@ -89,11 +92,27 @@ zig build
     ├── main.zig | Entrypoint of a program
     |
     ├── root.zig | Main header of an engine
+    |
+    ├── Conf.zig | Runtime configuration options
     └── ...
 ```
 
 ## 💾 Requirements
-(Not benchmarked for now)
+[zig 0.16.0 or higher](https://ziglang.org/learn/getting-started/)
+Source code size is **15.2 MB**,  
+- For the example:  
+    - Debug mode:  
+        **4.6 MB** for an executable and pdb  
+        at least **30 MB** of cache
+    - ReleaseSmall mode:  
+        **489 KB** for an executable and pdb  
+        at least **25 MB** of cache
+    - Release fast/safe mode:  
+        **3 MB** for an executable and pdb  
+        at least **25 MB** of cache
+
+`Make sure to delete .zig-cache folder time to time as it may grow really large or cause compatability issues`
+
 
 ## 👥 Contributing
 

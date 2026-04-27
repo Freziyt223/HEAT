@@ -1,4 +1,4 @@
-//! Memory tracking wrapper around std.mem.Allocator, 
+//! Memory tracking wrapper around std.mem.Allocator,
 //! it uses atomic monotonic mode for multithreading
 const std = @import("std");
 
@@ -37,15 +37,7 @@ const tracking_vtable = std.mem.Allocator.VTable{
 };
 
 pub fn init(Allocator: std.mem.Allocator, category: [*:0]const u8) Self {
-    return .{
-        .InternalAllocator = Allocator,
-        .inner = .{
-            .Category = category, 
-            .Allocated = .{ .raw = 0 },
-            .AllocationCount = .{ .raw = 0 },
-            .FreeCount = .{ .raw = 0 },
-            .Peak = .{ .raw = 0 }}
-    };
+    return .{ .InternalAllocator = Allocator, .inner = .{ .Category = category, .Allocated = .{ .raw = 0 }, .AllocationCount = .{ .raw = 0 }, .FreeCount = .{ .raw = 0 }, .Peak = .{ .raw = 0 } } };
 }
 
 pub fn allocator(self: *Self) std.mem.Allocator {
@@ -72,7 +64,6 @@ fn alloc(state: *anyopaque, len: usize, alignment: std.mem.Alignment, ret_addr: 
     if (!shouldTrack(self)) return res;
 
     if (res) |_| {
-
         const new_allocated = self.inner.Allocated.fetchAdd(len, .monotonic) + len;
         _ = self.inner.AllocationCount.fetchAdd(1, .monotonic);
 
@@ -99,7 +90,6 @@ fn free(state: *anyopaque, buf: []u8, alignment: std.mem.Alignment, ret_addr: us
     if (!shouldTrack(self)) return;
 
     _ = self.inner.Allocated.fetchSub(buf.len, .monotonic);
-    _ = self.inner.AllocationCount.fetchSub(1, .monotonic);
     _ = self.inner.FreeCount.fetchAdd(1, .monotonic);
 }
 
@@ -127,7 +117,6 @@ fn resize(state: *anyopaque, buf: []u8, alignment: std.mem.Alignment, new_len: u
         while (new_allocated > peak) : (peak = self.inner.Peak.load(.monotonic)) {
             if (self.inner.Peak.cmpxchgStrong(peak, new_allocated, .monotonic, .monotonic)) |_| break;
         }
-
     } else if (new_len < buf.len) {
         const diff = buf.len - new_len;
         _ = self.inner.Allocated.fetchSub(diff, .monotonic);

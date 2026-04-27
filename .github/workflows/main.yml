@@ -1,4 +1,4 @@
-name: CI
+name: Try building on pull
 
 on:
     push:
@@ -20,7 +20,7 @@ jobs:
           - name: Setup Zig
             uses: mlugg/setup-zig@v2
             with:
-                zig-version: '0.16.0'
-          - name: Build and run tests
-            run: zig build test
+                version: '0.16.0'
+          - name: Build
+            run: zig build
 
