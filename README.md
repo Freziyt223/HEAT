@@ -1,4 +1,6 @@
-HEAT is a project of making a free modular game engine with core focus on modularity.
+HEAT is a project of making a free modular game engine with core focus on modularity.  
+
+![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/Freziyt223/HEAT/main.yml)
 
 # Table of contents
 - [Something very important](#something-very-important)
