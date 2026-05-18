@@ -9,11 +9,12 @@ const TrackingAllocator = @import("TrackingAllocator");
 
 Allocator: TrackingAllocator = undefined,
 IO: IO_type = undefined,
-Async: Async_type = .{},
+Async: Async_type = undefined,
 
 pub fn init(self: *Self, Io: std.Io, allocator: std.mem.Allocator) !void {
     self.Allocator = .init(allocator, "Global");
     self.IO = try IO_type.init(Io);
+    self.Async = Async_type{.Io = Io};
     try self.Async.init(self.Allocator.allocator(), .{ .NumberOfThreads = Conf.NumberOfThreads, .QueueCapacity_EVEN = Conf.QueueCapacity_EVEN });
 }
 pub fn deinit(self: *Self) void {

@@ -50,7 +50,7 @@ pub fn init(self: *Self, allocator: std.mem.Allocator, config: Config) !void {
 }
 pub fn deinit(self: *Self) void {
     self.running.store(false, .release);
-    self.ScheduleQueue.deinit();
+    // self.ScheduleQueue.deinit();
     for (self.Threads) |*thread| {
         thread.deinit();
     }

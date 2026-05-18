@@ -6,7 +6,7 @@
     .fingerprint = 0x8cd10b4c48346225,
     .dependencies = .{
         .zig_zag = .{
-            .url = "https://github.com/meszmate/zigzag.git#main",
+            .url = "git+https://github.com/meszmate/zigzag.git#main",
             .hash = "zigzag-0.1.2-YXwYS17aEQBlpxPETTrhY5leFh7vV0DpnXJbHogs4Lsv"
         }
     }
