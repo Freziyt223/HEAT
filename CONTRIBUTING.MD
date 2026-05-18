@@ -12,15 +12,15 @@ Thank you for your interest in contributing to HEAT. Here is a guide for you to 
 3. Use `zig build` to verify engine actually builds without any error
 
 ### Project structure
-HEAT/
-├── src/
-|   ├── main.zig  # Entrypoint of a combined program
-|   ├── root.zig  # Main header of the engine
-|   ├── IO        # IO wrapper
-|   └── Async     # Multithreading
-├── config.zig    # Build configurations
-├── build.zig
-└── build.zig.zon
+HEAT/  
+├── src/  
+|   ├── main.zig  # Entrypoint of a combined program  
+|   ├── root.zig  # Main header of the engine  
+|   ├── IO        # IO wrapper  
+|   └── Async     # Multithreading  
+├── config.zig    # Build configurations  
+├── build.zig  
+└── build.zig.zon  
 
 ## How to contribute
 You can do following by making an Issue on github:
