@@ -1,4 +1,4 @@
-name: Try building on pull
+name: Build
 
 on:
     push:

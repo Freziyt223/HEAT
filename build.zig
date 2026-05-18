@@ -1,5 +1,5 @@
-//! Config contains configurations for this engine
-//! use addExecutable() to make an executable with your code and the engine
+//! Система побудови двигуна,
+//! використовуєте addExecutable(...) для отримання з'єднаної програми двигуна та вашого коду
 const std = @import("std");
 pub const Config = @import("config.zig");
 var options: ResolvedOptions = undefined;
@@ -12,7 +12,7 @@ pub fn build(b: *std.Build) void {
         .optimize = options.optimize,
     });
 
-    // 2. Pass the test step into your config
+    // створення прикладної програми з src/example.zig
     const exe = addExecutable(b, .{ 
         .name = "Example", 
         .user_module = example,
@@ -28,6 +28,8 @@ pub fn build(b: *std.Build) void {
 
     const run_step = b.step("run", "Run the application");
     run_step.dependOn(&run_cmd.step);
+
+    // zig build examples
 
     b.installArtifact(exe);
 }
@@ -61,17 +63,18 @@ pub fn addExecutable(b: *std.Build, config: ExecutableConfig) *std.Build.Step.Co
     const options_step = b.addOptions();
     options_step.addOption(bool, "singlethreaded", options.singlethreaded);
     options_step.addOption(bool, "runtime_safety", options.runtime_safety);
-    // Options passed to the engine when building or from config.zig
+    // Агрументи передані до даного скрипта побудови зібрані як модуль який можна
+    // використовувати всередині програми
     const BuildOptions = options_step.createModule();
 
-    // Implementation of an allocator that tracks some aspects of memory
+    // Спостерігання за пам'яттю
     const TrackingAllocator = b.addModule("TrackingAllocator", .{ 
         .root_source_file = b.path("src/TrackingAllocator.zig"), 
         .target = config.target orelse options.target, 
         .optimize = config.optimize orelse options.optimize 
     });
 
-    // Conf module(for global comptime configuration)
+    // Конфігурація для двигуна
     const Conf = b.addModule("Conf", .{
         .root_source_file = b.path("src/Conf.zig"),
         .target = config.target orelse options.target,
@@ -80,7 +83,7 @@ pub fn addExecutable(b: *std.Build, config: ExecutableConfig) *std.Build.Step.Co
     config.user_module.addImport("Conf", Conf);
     Conf.addImport("BuildOptions", BuildOptions);
     
-    // IO of the engine
+    // Система ввводу та виводу даних для програми
     const IO = b.addModule("IO", .{ 
         .root_source_file = b.path("src/IO/main.zig"), 
         .target = config.target orelse options.target, 
@@ -88,7 +91,15 @@ pub fn addExecutable(b: *std.Build, config: ExecutableConfig) *std.Build.Step.Co
     });
     IO.addImport("TrackingAllocator", TrackingAllocator);
 
-    // Main header of the engine to allow user to interact with the engine
+    // Async(багатопоточність) для двигуна
+    const Async = b.addModule("Async", .{
+        .root_source_file = b.path("src/Async/main.zig"),
+        .target = config.target orelse options.target,
+        .optimize = config.optimize orelse options.optimize 
+    });
+    Async.addImport("TrackingAllocator", TrackingAllocator);
+
+    // Основна обгортка що об'єднує в собі інші
     const Engine = b.addModule("Engine", .{ 
         .root_source_file = b.path("src/root.zig"), 
         .target = config.target orelse options.target, 
@@ -96,12 +107,13 @@ pub fn addExecutable(b: *std.Build, config: ExecutableConfig) *std.Build.Step.Co
         .imports = &.{ 
             .{ .name = "IO", .module = IO }, 
             .{ .name = "Conf", .module = Conf }, 
-            .{ .name = "TrackingAllocator", .module = TrackingAllocator } 
+            .{ .name = "TrackingAllocator", .module = TrackingAllocator },
+            .{ .name = "Async", .module = Async }
         } 
     });
     config.user_module.addImport("Engine", Engine);
 
-    // Actual executable module that will merge user and engine code
+    // Виконувана програма
     const Executable = b.addExecutable(.{ .name = config.name, .root_module = b.createModule(.{
         .target = config.target orelse options.target,
         .optimize = config.optimize orelse options.optimize,

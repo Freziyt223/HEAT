@@ -1,5 +1,5 @@
-//! Memory tracking wrapper around std.mem.Allocator,
-//! it uses atomic monotonic mode for multithreading
+//! Обгортка для стеження за станом пам'яті.
+//! Підтримує багатопоточність
 const std = @import("std");
 
 const Self = @This();
@@ -61,8 +61,6 @@ fn alloc(state: *anyopaque, len: usize, alignment: std.mem.Alignment, ret_addr: 
         ret_addr,
     );
 
-    if (!shouldTrack(self)) return res;
-
     if (res) |_| {
         const new_allocated = self.inner.Allocated.fetchAdd(len, .monotonic) + len;
         _ = self.inner.AllocationCount.fetchAdd(1, .monotonic);
@@ -87,8 +85,6 @@ fn free(state: *anyopaque, buf: []u8, alignment: std.mem.Alignment, ret_addr: us
         ret_addr,
     );
 
-    if (!shouldTrack(self)) return;
-
     _ = self.inner.Allocated.fetchSub(buf.len, .monotonic);
     _ = self.inner.FreeCount.fetchAdd(1, .monotonic);
 }
@@ -105,7 +101,6 @@ fn resize(state: *anyopaque, buf: []u8, alignment: std.mem.Alignment, new_len: u
     );
 
     if (!ok) return false;
-    if (!shouldTrack(self)) return true;
 
     if (new_len > buf.len) {
         const diff = new_len - buf.len;
@@ -137,8 +132,6 @@ fn remap(state: *anyopaque, buf: []u8, alignment: std.mem.Alignment, new_len: us
         new_len,
         ret_addr,
     );
-
-    if (!shouldTrack(self)) return res;
 
     if (res) |_| {
         if (new_len > buf.len) {

@@ -1,4 +1,4 @@
-//! IO wrapper for file and console manipulations
+//! IO wrapper
 const std = @import("std");
 const Self = @This();
 

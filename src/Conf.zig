@@ -1,7 +1,9 @@
-//! If null is specified standart configurations will be applied including build options or standart values
-//! If you want to change this do it with caution as it may break some things
+//! If there is a null - default runtime value will be used
+//! If you want to change any values do it with caution as this might break functionality
 const std = @import("std");
 pub const BuildOptions = @import("BuildOptions");
-
-pub var runtime_safety: ?bool = null;
 pub var GlobalAllocator: ?std.mem.Allocator = null;
+/// Not including main thread
+pub var NumberOfThreads: usize = 3;
+/// MUST BE A POWER OF 2
+pub var QueueCapacity_EVEN: usize = 12;
