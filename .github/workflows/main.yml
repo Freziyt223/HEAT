@@ -22,4 +22,4 @@ jobs:
             with:
                 version: '0.16.0'
           - name: Build
-            run: zig build
+            run: cd examples && zig build

@@ -3,8 +3,7 @@ const Atomic = std.atomic.Value;
 pub const queue = @import("queue.zig");
 const TrackingAllocator = @import("TrackingAllocator");
 
-
-pub fn Thread(comptime itemType: type) type {
+pub fn Thread(comptime itemType: type, comptime Reserve: type) type {
     return struct {
         const Self = @This();
         pub var Allocator: ?TrackingAllocator = null;
@@ -22,6 +21,7 @@ pub fn Thread(comptime itemType: type) type {
         /// This is external array of threads so we can use steal() on them
         thread_pool: []Self,
         running: *Atomic(bool),
+        reserved: bool = false,
 
         /// Initializing thread and queue
         /// queueCapacity_EVEN has to be a power of 2
@@ -57,5 +57,15 @@ pub fn Thread(comptime itemType: type) type {
             }
             self.active.store(false, .release);
         }
+
+        pub fn getHandle(self: *Self) Reserve {
+            return Reserve{.thread = self};
+        }
+
+        pub fn reserve(self: *Self) Reserve {
+            self.reserved = true;
+            return Reserve{.thread = self};
+        }
     };
 }
+

@@ -52,16 +52,17 @@ Now in your code you can import and use the engine, here is an example:
 const std = @import("std");
 const Self = @This();
 const Engine = @import("Engine");
-const Conf = @import("Conf"); // if you want to change preinit values
+const Conf = @import("Conf");
 
-pub fn init(this: *Self, engine: *Engine, args: std.process.Args) !void {
+pub fn init(this: *Self, args: std.process.Args) !void {
     _ = this;
     _ = args;
-    try engine.IO.print("Hello, {s}\n", .{"world!"});
+    try Engine.IO.print("Hello, {s}\n", .{"world!"});
 }
 pub fn deinit(this: *Self) void {
     _ = this;
 }
+
 ```
 
 ## Configure
@@ -84,3 +85,9 @@ fn load_profile() {
 }
 ```  
 All those config options and options passed on build are loaded into `Engine.Conf.BuildOptions`
+
+## Examples
+All of the examples are located in **"examples"** folder, to build them all run `zig build` in that folder.  
+If you want to build a singular example just run `zig build <name of example>`.
+You can also use run step like this: `zig build run-<name of example>`, which will build and execute selected example.
+

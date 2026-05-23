@@ -7,130 +7,100 @@ const Conf = @import("Conf");
 const Self = @This();
 /// Struct to hold values in queue until needed to be executed
 const Call = struct {
-    function: *const fn(Call) void,
-    args: *anyopaque = undefined,
-    return_to: ?*anyopaque
+    function: *const fn (Call) void,
+    args: *anyopaque,
+    return_to: ?*anyopaque = null,
 };
-pub const Thread = Thread_type.Thread(Call);
+pub const Thread = Thread_type.Thread(Call, Reserve);
 pub const JobQueue = Thread.Queue;
-/// Struct to hold values for repeated function calling
-const ScheduledCall = struct {
-    function: *const fn(ScheduledCall) void,
-    args: *anyopaque = undefined,
-    /// Scheduled time to call the function
-    at: std.Io.Timestamp,
-    /// Time to wait before calling function next time
-    timeout: ?std.Io.Duration = null,
-    thread_id: usize
+/// I've made this struct to merge general calls and thread-reserved calls
+/// Generally this should allow users to access threads directly,
+/// pin them so random calls won't be called in it
+pub const Reserve = struct {
+    thread: *Thread,
+    pub fn call(self: *Reserve, comptime function: anytype, args: anytype, return_to: ?*anyopaque) !JobQueue.PushReturn {
+        // Just wanted to try using blocks in zig...
+        const item = item_blk: {
+            if (Thread.Allocator) |*Allocator| {
+                const allocator = Allocator.allocator();
+                const args_type = @TypeOf(args);
+                const wrap_function = try wrap(function, args_type);
+                const stored = try allocator.create(args_type);
+                stored.* = args;
+                break :item_blk Call{ .function = wrap_function, .args = @ptrCast(@alignCast(stored)), .return_to = return_to };
+            } else return Thread.ThreadError.NullAllocator;
+        };
+        return self.thread.queue.push(item);
+    }
 };
-/// Queue for scheduler
-ScheduleQueue: std.ArrayList(ScheduledCall) = .empty,
-Io: std.Io,
+pub var Io: std.Io = undefined;
 /// Thread pool(dirrect calls)
-Threads: []Thread = undefined,
-running: Atomic(bool) = .init(false),
+pub var Threads: []Thread = undefined;
+pub var running: Atomic(bool) = .init(true);
 
+pub var next_thread: usize = 0;
 
 /// QueueCapacity_Even MUST BE A POWER OF 2
-pub const Config = struct {
-    NumberOfThreads: usize,
-    QueueCapacity_EVEN: usize
-};
+pub const Config = struct { NumberOfThreads: usize, QueueCapacity_EVEN: usize };
 
-pub fn init(self: *Self, allocator: std.mem.Allocator, config: Config) !void {
+pub fn init(io: std.Io, allocator: std.mem.Allocator, config: Config) !void {
+    Io = io;
     // Initializing allocators
     Thread.Allocator = TrackingAllocator.init(allocator, "Thread");
     JobQueue.Allocator = TrackingAllocator.init(allocator, "JobQueue");
     // Initializing threads
-    self.Threads = try Thread.Allocator.?.allocator().alloc(Thread, config.NumberOfThreads);
-    for (self.Threads[0..]) |*thread| {
-        thread.* = try Thread.init(config.QueueCapacity_EVEN, self.Threads[0..], &self.running);
+    Threads = try Thread.Allocator.?.allocator().alloc(Thread, config.NumberOfThreads);
+    for (Threads[0..]) |*thread| {
+        thread.* = try Thread.init(config.QueueCapacity_EVEN, Threads[0..], &running);
         try thread.spawn();
     }
 }
-pub fn deinit(self: *Self) void {
-    self.running.store(false, .release);
+pub fn deinit() void {
+    running.store(false, .release);
     // self.ScheduleQueue.deinit();
-    for (self.Threads) |*thread| {
+    for (Threads) |*thread| {
         thread.deinit();
     }
-    
-    if (Thread.Allocator) |*allocator| allocator.allocator().free(self.Threads);
+
+    if (Thread.Allocator) |*allocator| allocator.allocator().free(Threads);
 }
 
-const CallError = error {
+const CallError = error{
     WrongID,
     WrongFunctionType,
 };
-pub fn call(self: *Self, comptime function: anytype, args: anytype, thread_id: usize) !JobQueue.PushReturn {
-    const args_type = @TypeOf(args);
-    const stored = if (Thread.Allocator) |*allocator| try allocator.allocator().create(args_type)
-                            else return Thread.ThreadError.NullAllocator;
-    stored.* = args;
-    const item = Call{
-        .function = try wrap(function, args_type),
-        .args = @ptrCast(@alignCast(stored)),
-        .return_to = null
-    };
-    if (thread_id >= self.Threads.len) return CallError.WrongID;
-    return self.Threads[thread_id].queue.push(item);
+pub fn call(comptime function: anytype, args: anytype, return_to: ?*anyopaque) !JobQueue.PushReturn {
+    const capacity = Threads.len;
+    var iterations = capacity;
+    var i = @mod(next_thread, capacity);
+    var thread = &Threads[i];
+    while (thread.reserved and iterations != 0) {
+        next_thread +%= 1;
+        iterations -= 1;
+        if (i >= capacity) i = 0;
+        thread = &Threads[i];
+    }
+    next_thread = i +% 1;
+    var reserve = Reserve{ .thread = thread };
+    return reserve.call(function, args, return_to);
 }
 
-fn wrap(comptime function: anytype, args_type: type) CallError!*const fn(*anyopaque) void {
+fn wrap(comptime function: anytype, args_type: type) CallError!*const fn (Call) void {
     const function_type = @TypeOf(function);
     switch (@typeInfo(function_type)) {
         .@"fn" => {
+            // Using the wrapper to place a function declaration inside this wrap() function
             const wrapper = struct {
-                pub fn exec(self: Call) Thread.ThreadError!void {
-                    const args = @as(*args_type, self.args);
-                    _ = @call(.auto, function, args.*);
+                pub fn exec(self: Call) void {
+                    const args = @as(*args_type, @ptrCast(@alignCast(self.args)));
+                    _ = @call(.auto, function, args.*) catch {};
 
-                    if (Thread.Allocator) |*allocator| 
+                    if (Thread.Allocator) |*allocator|
                         allocator.allocator().destroy(args);
                 }
             };
             return &wrapper.exec;
         },
-        else => return error.WrongFunctionType
+        else => return error.WrongFunctionType,
     }
-}
-/// WIP don't use for now
-pub fn schedule(self: *Self, comptime function: anytype, args: anytype, at: std.Io.Timestamp, thread_id: usize) !void {
-    if (thread_id >= self.Threads.len) return CallError.WrongID;
-    if (Thread.Allocator) |*allocator| {
-        const args_type = @TypeOf(args);
-        const stored = try allocator.allocator().create(args_type);
-        stored.* = args;
-        const item = ScheduledCall{
-            .function = try wrap(function, args_type),
-            .args = @ptrCast(@alignCast(stored)),
-            .thread_id = thread_id,
-            .at = at
-        };
-        
-        self.ScheduleQueue.append(allocator.allocator(), item);
-    } else return Thread.ThreadError.NullAllocator;
-}
-/// WIP don't use for now
-pub fn scheduleRepeated(self: *Self, comptime function: anytype, args: anytype, timeout: std.Io.Duration, thread_id: usize) !void {
-    if (thread_id >= self.Threads.len) return CallError.WrongID;
-    if (Thread.Allocator) |*allocator| {
-        const args_type = @TypeOf(args);
-        const stored = try allocator.allocator().create(args_type);
-        stored.* = args;
-
-        const item = ScheduledCall{
-            .function = try wrap(function, args_type),
-            .args = @ptrCast(@alignCast(stored)),
-            .thread_id = thread_id,
-            .at = std.Io.Timestamp.now(self.Io, .awake).addDuration(timeout),
-            .timeout = timeout,
-        };
-        
-        self.ScheduleQueue.append(allocator.allocator(), item);
-    } else return Thread.ThreadError.NullAllocator;
-}
-/// WIP don't use for now
-pub fn updateSchedule(self: *Self) void {
-    _ = self;
 }

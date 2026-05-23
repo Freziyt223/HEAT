@@ -6,4 +6,4 @@ pub var GlobalAllocator: ?std.mem.Allocator = null;
 /// Not including main thread
 pub var NumberOfThreads: usize = 3;
 /// MUST BE A POWER OF 2
-pub var QueueCapacity_EVEN: usize = 12;
+pub var QueueCapacity_EVEN: usize = 8;

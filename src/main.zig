@@ -15,19 +15,17 @@ pub fn main_impl(Init: std.process.Init) !void {
     }).init;
 
     // Making an engine object
-    var engine = Engine{};
-    try engine.init(Init.io, Conf.GlobalAllocator orelse gpa.allocator());
+    try Engine.init(Init.io, Conf.GlobalAllocator orelse gpa.allocator());
 
     // and an user object
     var user = User{};
-    try user.init(&engine, Init.minimal.args);
-    defer user.deinit();
+    try user.init(Init.minimal.args);
 
     // Update loop
-
-    
+    try std.Io.sleep(Init.io, .fromSeconds(3), .awake);
 
     // Deinit
-    engine.deinit();
-    std.debug.assert(gpa.deinit() == .ok); 
+    user.deinit();
+    Engine.deinit();
+    std.debug.assert(gpa.deinit() == .ok);
 }

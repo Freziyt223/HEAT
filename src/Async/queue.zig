@@ -8,10 +8,10 @@ pub fn Queue(comptime ItemType: type) type {
     return struct {
         const Self = @This();
         pub var Allocator: ?TrackingAllocator = null;
-        const QueueError = error {
+        pub const QueueError = error {
             NullAllocator
         };
-        const PushReturn = enum {
+        pub const PushReturn = enum {
             ok,
             Full
         };
@@ -52,9 +52,8 @@ pub fn Queue(comptime ItemType: type) type {
 
             while (true) {
                 const cell = &self.buffer[enqueue & self.mask];
-                const sequence = cell.sequence.load(.acquire);
                 // Safe subtract(as we cast to isize we lose first bit, which isn't very important as we only need range from -1 to 1)
-                const diff = @as(isize, @bitCast(sequence -% enqueue));
+                const diff = @as(isize, @bitCast(cell.sequence.load(.acquire) -% enqueue));
                 if (diff > 0) {
                     // Some thread was ahead of us, try again
                     enqueue += 1;
@@ -82,7 +81,7 @@ pub fn Queue(comptime ItemType: type) type {
 
         pub fn pop(self: *Self) ?ItemType {
             var dequeue = self.DEqueue.load(.acquire);
-
+            
             while (true) {
                 const cell = &self.buffer[dequeue & self.mask];
                 const sequence = cell.sequence.load(.acquire);
@@ -103,9 +102,10 @@ pub fn Queue(comptime ItemType: type) type {
                     dequeue = actual_dequeue;
                     continue;
                 }
-                const item = cell.data;
                 // Updating sequence to be 
                 cell.sequence.store(dequeue +% self.capacity, .release);
+                const item = cell.data;
+
                 return item;
             }
         }

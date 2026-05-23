@@ -5,9 +5,7 @@
     .paths = .{""},
     .fingerprint = 0x8cd10b4c48346225,
     .dependencies = .{
-        .zig_zag = .{
-            .url = "git+https://github.com/meszmate/zigzag.git#main",
-            .hash = "zigzag-0.1.2-YXwYS73qEQD51GHfONVN8Bas1RpyN2y5P2DLuLQUAhRZ"
-        }
-    }
+        // example dependency
+        //.zig_zag = .{ .url = "git+https://github.com/meszmate/zigzag.git#main", .hash = "zigzag-0.1.2-YXwYS73qEQD51GHfONVN8Bas1RpyN2y5P2DLuLQUAhRZ" },
+    },
 }
