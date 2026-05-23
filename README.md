@@ -7,6 +7,7 @@ HEAT is a project of making a free modular game engine with core focus on modula
 - [Features](#features)
 - [Usage](#usage)
 - [Configure](#configure)
+- [Examples](#examples)
 
 ## Something very important
 std.Build.StandartOptimizeOptions(.{}); Doesn't pass optimize correctly to the dependencies! Use b.option(bool, "optimize", ...) or set it manually.
