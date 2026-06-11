@@ -8,6 +8,7 @@ const TrackingAllocator = @import("TrackingAllocator");
 pub var Allocator: TrackingAllocator = undefined;
 pub const IO = @import("IO");
 pub const Async = @import("Async");
+pub const ztracy = @import("ztracy");
 
 pub const StateEnum = enum(u8) { Quitting, Running, ErrorQutting };
 pub var State: std.atomic.Value(StateEnum) = .init(.Quitting);

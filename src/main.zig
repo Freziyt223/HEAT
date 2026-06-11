@@ -19,8 +19,52 @@ pub fn main_impl(Init: std.process.Init) !void {
     if (@hasDecl(User, "init"))
         try User.init(Init.minimal.args);
 
-    // Update loop
-    try std.Io.sleep(Init.io, .fromSeconds(3), .awake);
+    // Update code, it supports 3 different declarations of update functions and chooses the path
+    // instead of checking them each tick
+    if (@hasDecl(User, "update")) switch (@typeInfo(@TypeOf(User.update))) {
+        .@"fn" => {
+            const handle = try Engine.Async.scheduleRepeated(User.update, .{}, null);
+            while (Engine.State.load(.acquire) == .Running) {
+                try Engine.Async.updateSchedule();
+            }
+            try handle.cancel();
+        },
+        .type => {
+            if (@hasDecl(User.update, "update")) switch (@typeInfo(@TypeOf(User.update.update))) {
+                .@"fn" => {
+                    if (@hasDecl(User.update, "tick_rate")) {
+                        const handle = try Engine.Async.scheduleRepeated(User.update, .{}, User.update.tick_rate);
+                        while (Engine.State.load(.acquire) == .Running) {
+                            try Engine.Async.updateSchedule();
+                        }
+                        try handle.cancel();
+                    } else @panic("User update struct has to contain \"tick_rate\" field!");
+                },
+                else => @panic("update field in User update struct must be a function!"),
+            };
+        },
+        .array => |array| {
+            // check for single threaded
+            var handles: [array.len]Engine.Async.Scheduler.Scheduler.Handle = undefined;
+            inline for (User.update[0..array.len], 0..array.len) |update, i| {
+                if (@hasDecl(update, "update")) switch (@typeInfo(@TypeOf(update.update))) {
+                    .@"fn" => {
+                        if (@hasDecl(update, "tick_rate")) {
+                            handles[i] = try Engine.Async.scheduleRepeated(update.update, .{}, update.tick_rate);
+                        } else @panic("User update struct has to contain \"tick_rate\" field!");
+                    },
+                    else => @panic("update field in User update struct must be a function!"),
+                };
+            }
+            while (Engine.State.load(.acquire) == .Running) {
+                try Engine.Async.updateSchedule();
+            }
+            for (handles) |handle| {
+                try handle.cancel();
+            }
+        },
+        else => @panic("Wrong type of User update!"),
+    };
 
     // Deinit
     if (@hasDecl(User, "deinit"))

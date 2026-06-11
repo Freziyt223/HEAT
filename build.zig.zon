@@ -7,5 +7,9 @@
     .dependencies = .{
         // example dependency
         //.zig_zag = .{ .url = "git+https://github.com/meszmate/zigzag.git#main", .hash = "zigzag-0.1.2-YXwYS73qEQD51GHfONVN8Bas1RpyN2y5P2DLuLQUAhRZ" },
+        .ztracy = .{
+            .url = "git+https://github.com/zig-gamedev/ztracy.git#main",
+            .hash = "ztracy-0.14.0-dev-zHJSqzUHGQAmhJybhlwtl1QKevUBw4M5YKZqPfWx2y99",
+        },
     },
 }

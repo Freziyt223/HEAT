@@ -1,6 +1,7 @@
 //! Обгортка для стеження за станом пам'яті.
 //! Підтримує багатопоточність
 const std = @import("std");
+const ztracy = @import("ztracy");
 
 const Self = @This();
 /// This is the internal vtable of this allocator
