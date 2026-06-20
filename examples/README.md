@@ -14,6 +14,8 @@ examples/
 ├── <example_name>/  
 │   ├── src/
 |   |   ├── main.zig
+|   |   |     or
+|   |   ├── main.c
 |   |   └── ...
 |   └── build_example.zig
 ├── build.zig  

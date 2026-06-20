@@ -2,7 +2,7 @@ const std = @import("std");
 
 const Example = struct {
     name: []const u8,
-    build_fn: *const fn (*std.Build) anyerror!*std.Build.Step.Compile,
+    build_fn: *const fn (*std.Build, std.Build.ResolvedTarget, std.builtin.OptimizeMode) anyerror!*std.Build.Step.Compile,
 };
 
 const examples = [_]Example{
@@ -10,11 +10,18 @@ const examples = [_]Example{
         .name = "basic",
         .build_fn = @import("basic/build_example.zig").build,
     },
+    .{
+        .name = "C",
+        .build_fn = @import("C/build_example.zig").build,
+    },
 };
 
 pub fn build(b: *std.Build) !void {
-    for (examples) |ex| {
-        const exe = try ex.build_fn(b);
+    const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseFast });
+
+    for (examples[0..]) |ex| {
+        const exe = try ex.build_fn(b, target, optimize);
 
         // 1. Create a step to build/install this specific example: `zig build <name>`
         const install_artifact = b.addInstallArtifact(exe, .{});

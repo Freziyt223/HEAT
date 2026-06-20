@@ -6,4 +6,6 @@ pub var runtime_safety: bool = true;
 pub var profile: *const fn () void = &default_profile;
 pub var ztracy_enable: bool = true;
 
+pub var c_bindings: bool = true;
+
 pub fn default_profile() void {}

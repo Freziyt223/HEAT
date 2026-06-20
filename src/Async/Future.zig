@@ -11,7 +11,7 @@ pub fn Future(comptime T: type) type {
         result: ?T = null,
         ready: Atomic(bool) = .init(false),
 
-        pub fn wait(self: *Self) !T {
+        pub fn wait(self: *Self) T {
             while (!self.ready.load(.seq_cst)) {
                 std.atomic.spinLoopHint();
             }

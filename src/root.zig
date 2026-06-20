@@ -2,8 +2,9 @@
 //! must be initialized like in src/main.zig
 const std = @import("std");
 const Self = @This();
-const Conf = @import("Conf");
-const TrackingAllocator = @import("TrackingAllocator");
+
+pub const Conf = @import("Conf");
+pub const TrackingAllocator = @import("TrackingAllocator");
 
 pub var Allocator: TrackingAllocator = undefined;
 pub const IO = @import("IO");
@@ -16,7 +17,7 @@ pub var State: std.atomic.Value(StateEnum) = .init(.Quitting);
 pub fn init(Io: std.Io, allocator: std.mem.Allocator) !void {
     Allocator = TrackingAllocator.init(allocator, "Global");
     try IO.init(Io);
-    try Async.init(Io, Allocator.allocator(), .{ .NumberOfThreads = Conf.NumberOfThreads, .QueueCapacity_EVEN = Conf.QueueCapacity_EVEN });
+    try Async.init(Allocator.allocator(), .{ .NumberOfThreads = Conf.NumberOfThreads, .QueueCapacity_EVEN = Conf.QueueCapacity_EVEN });
     errdefer State.store(.ErrorQutting, .unordered);
     State.store(.Running, .unordered);
 }

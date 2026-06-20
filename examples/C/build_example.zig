@@ -8,16 +8,13 @@ pub fn build(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     const HEAT_dep = b.dependency("HEAT", .{});
     const builder = HEAT_dep.builder;
 
-    const example = b.createModule(.{
-        .root_source_file = b.path("basic/src/main.zig"),
+    // creation of a program Example
+    const exe = HEAT.addExecutable(builder, .{
+        .name = "C",
         .target = target,
         .optimize = optimize,
     });
-    // creation of a program Example
-    const exe = HEAT.addExecutable(builder, .{
-        .name = "basic",
-        .user_module = example,
-    });
+    exe.root_module.addCSourceFile(.{ .file = b.path("C/src/main.c") });
 
     return exe;
 }

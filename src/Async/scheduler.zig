@@ -8,7 +8,7 @@ const Task = @import("task.zig");
 const Thread = Task.Thread;
 const JobQueue = Task.JobQueue;
 
-pub var Allocator: ?TrackingAllocator = null;
+pub var Allocator: TrackingAllocator = undefined;
 
 pub const Scheduler = struct {
     pub const SchedulerError = error{ NullAllocator, CallNotFound };
@@ -32,7 +32,7 @@ pub const Scheduler = struct {
         destroy: *const fn (*const Task.Call) void,
         self_destroy: *const fn (*const Call) void,
         allocator: ?*TrackingAllocator = null,
-        args: *anyopaque,
+        args: ?*anyopaque,
         at: ?std.Io.Timestamp,
         rate: ?std.Io.Duration = null,
         return_to: ?*anyopaque = null,
@@ -43,20 +43,16 @@ pub const Scheduler = struct {
     pub var next_call_id = std.atomic.Value(usize).init(0);
 
     pub fn deinit() void {
-        if (Allocator) |*allocator| {
-            acquire();
-            defer release();
-            Queue.deinit(allocator.allocator());
-        }
+        acquire();
+        defer release();
+        Queue.deinit(Allocator.allocator());
     }
 
     pub fn push(call: Call) !Handle {
-        if (Allocator) |*allocator| {
-            acquire();
-            defer release();
-            try Queue.push(allocator.allocator(), call);
-            return Handle{ .id = call.id };
-        } else return SchedulerError.NullAllocator;
+        acquire();
+        defer release();
+        try Queue.push(Allocator.allocator(), call);
+        return Handle{ .id = call.id };
     }
 
     pub fn nextId() usize {

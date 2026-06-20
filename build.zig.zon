@@ -11,5 +11,9 @@
             .url = "git+https://github.com/zig-gamedev/ztracy.git#main",
             .hash = "ztracy-0.14.0-dev-zHJSqzUHGQAmhJybhlwtl1QKevUBw4M5YKZqPfWx2y99",
         },
+        .zig_luajit = .{
+            .url = "https://github.com/sackosoft/zig-luajit.git",
+            .hash = "luajit-3.0.0-nMGF0vfCAwBfUsknnnrxFWEDZ4G6sOgppH6DGzWgn7fV",
+        },
     },
 }

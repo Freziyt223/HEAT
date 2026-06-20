@@ -7,18 +7,10 @@ const TrackingAllocator = @import("TrackingAllocator");
 pub fn Queue(comptime ItemType: type) type {
     return struct {
         const Self = @This();
-        pub var Allocator: ?TrackingAllocator = null;
-        pub const QueueError = error {
-            NullAllocator
-        };
-        pub const PushReturn = enum {
-            ok,
-            Full
-        };
-        const Cell = struct {
-            sequence: Atomic(usize),
-            data: ?ItemType = null
-        };
+        pub var Allocator: TrackingAllocator = undefined;
+        pub const QueueError = error{NullAllocator};
+        pub const PushReturn = enum { ok, Full };
+        const Cell = struct { sequence: Atomic(usize), data: ?ItemType = null };
 
         buffer: []Cell,
         capacity: usize,
@@ -27,24 +19,16 @@ pub fn Queue(comptime ItemType: type) type {
         DEqueue: Atomic(usize) = .init(0),
 
         pub fn init(capacity_EVEN: usize) !Self {
-            if (Allocator) |*allocator| {
-                const capacity_1 = capacity_EVEN - 1;
-                std.debug.assert(capacity_EVEN & capacity_1 == 0);
-                const Return = Self{
-                    .capacity = capacity_EVEN,
-                    .mask = capacity_1,
-                    .buffer = try allocator.allocator().alloc(Cell, capacity_EVEN)
-                };
-                for (0..capacity_EVEN) |i| {
-                    Return.buffer[i].sequence.store(i, .unordered);
-                }
-                return Return;
-            } else return error.NullAllocator;
+            const capacity_1 = capacity_EVEN - 1;
+            std.debug.assert(capacity_EVEN & capacity_1 == 0);
+            const Return = Self{ .capacity = capacity_EVEN, .mask = capacity_1, .buffer = try Allocator.allocator().alloc(Cell, capacity_EVEN) };
+            for (0..capacity_EVEN) |i| {
+                Return.buffer[i].sequence.store(i, .unordered);
+            }
+            return Return;
         }
         pub fn deinit(self: *Self) void {
-            if (Allocator) |*allocator| {
-                allocator.allocator().free(self.buffer);
-            }
+            Allocator.allocator().free(self.buffer);
         }
 
         pub fn push(self: *Self, item: ItemType) PushReturn {
@@ -58,8 +42,7 @@ pub fn Queue(comptime ItemType: type) type {
                     // Some thread was ahead of us, try again
                     enqueue += 1;
                     continue;
-                }
-                else if (diff < 0) {
+                } else if (diff < 0) {
                     // Other thread is working on this object or full queue
                     if (enqueue & self.mask == 0) return PushReturn.Full;
                     // if it's other thread try again
@@ -76,12 +59,12 @@ pub fn Queue(comptime ItemType: type) type {
                 cell.data = item;
                 cell.sequence.store(enqueue +% 1, .release);
                 return PushReturn.ok;
-            } 
+            }
         }
 
         pub fn pop(self: *Self) ?ItemType {
             var dequeue = self.DEqueue.load(.acquire);
-            
+
             while (true) {
                 const cell = &self.buffer[dequeue & self.mask];
                 const sequence = cell.sequence.load(.acquire);
@@ -90,8 +73,7 @@ pub fn Queue(comptime ItemType: type) type {
                 if (diff < 0) {
                     // Empty
                     return null;
-                }
-                else if (diff > 0) {
+                } else if (diff > 0) {
                     dequeue = self.DEqueue.load(.monotonic);
                 }
 
@@ -102,7 +84,7 @@ pub fn Queue(comptime ItemType: type) type {
                     dequeue = actual_dequeue;
                     continue;
                 }
-                // Updating sequence to be 
+                // Updating sequence to be
                 cell.sequence.store(dequeue +% self.capacity, .release);
                 const item = cell.data;
 

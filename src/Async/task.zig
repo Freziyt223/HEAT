@@ -10,7 +10,7 @@ pub const Call = struct {
     function: *const fn (Call) void,
     destroy: *const fn (*const Call) void,
     allocator: ?*TrackingAllocator = null,
-    args: *anyopaque,
+    args: ?*anyopaque,
     return_to: ?*anyopaque = null,
 };
 pub const Thread = Thread_type.Thread(Call, Reserve);
@@ -29,7 +29,6 @@ const CallError = error{
     WrongID,
     WrongFunctionType,
 };
-
 pub fn wrap(comptime function: anytype, args_type: type, CallType: type) CallError!struct {
     exec: *const fn (CallType) void,
     destroy: *const fn (*const CallType) void,
@@ -40,8 +39,17 @@ pub fn wrap(comptime function: anytype, args_type: type, CallType: type) CallErr
             // Using the wrapper to place a function declaration inside this wrap() function
             const wrapper = struct {
                 pub fn exec(self: CallType) void {
-                    const args = @as(*args_type, @ptrCast(@alignCast(self.args)));
-                    const returned = @call(.auto, function, args.*);
+                    // 1. We use inline if (or a comptime block just for the type logic)
+                    // to decide *how* to initialize the tuple at runtime.
+                    const args_tuple = if (comptime args_type == void)
+                        .{}
+                    else
+                        @as(*args_type, @ptrCast(@alignCast(self.args orelse unreachable))).*;
+
+                    // 2. Call the function once
+                    const returned = @call(.auto, function, args_tuple);
+
+                    // 3. Handle the return value/future
                     if (self.return_to) |self_return_to| {
                         const return_to: *Future.Future(@TypeOf(returned)) = @ptrCast(@alignCast(self_return_to));
                         return_to.set(returned);
@@ -49,12 +57,40 @@ pub fn wrap(comptime function: anytype, args_type: type, CallType: type) CallErr
                 }
                 pub fn destroy(self: *const CallType) void {
                     if (self.allocator) |allocator| {
-                        const args = @as(*args_type, @ptrCast(@alignCast(self.args)));
-                        allocator.allocator().destroy(args);
+                        if (self.args) |args_stored| {
+                            const args = @as(*args_type, @ptrCast(@alignCast(args_stored)));
+                            allocator.allocator().destroy(args);
+                        }
                     }
                 }
             };
             return .{ .exec = wrapper.exec, .destroy = wrapper.destroy };
+        },
+        .pointer => |p| {
+            switch (@typeInfo(p.child)) {
+                .@"fn" => {
+                    // Using the wrapper to place a function declaration inside this wrap() function
+                    const wrapper = struct {
+                        pub fn exec(self: CallType) void {
+                            const returned = @call(.auto, function, if (self.args) |args| @as(*args_type, @ptrCast(@alignCast(args))).* else .{});
+                            if (self.return_to) |self_return_to| {
+                                const return_to: *Future.Future(@TypeOf(returned)) = @ptrCast(@alignCast(self_return_to));
+                                return_to.set(returned);
+                            }
+                        }
+                        pub fn destroy(self: *const CallType) void {
+                            if (self.allocator) |allocator| {
+                                if (self.args) |args_stored| {
+                                    const args = @as(*args_type, @ptrCast(@alignCast(args_stored)));
+                                    allocator.allocator().destroy(args);
+                                }
+                            }
+                        }
+                    };
+                    return .{ .exec = wrapper.exec, .destroy = wrapper.destroy };
+                },
+                else => return error.WrongFunctionType,
+            }
         },
         else => return error.WrongFunctionType,
     }

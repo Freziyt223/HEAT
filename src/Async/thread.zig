@@ -6,10 +6,8 @@ const TrackingAllocator = @import("TrackingAllocator");
 pub fn Thread(comptime itemType: type, comptime Reserve: type) type {
     return struct {
         const Self = @This();
-        pub var Io: std.Io = undefined;
-        pub var Allocator: ?TrackingAllocator = null;
+        pub var Allocator: TrackingAllocator = undefined;
         pub const Queue = queue.Queue(itemType);
-        pub const ThreadError = error{NullAllocator};
 
         handle: std.Thread = undefined,
         queue: Queue,
@@ -33,7 +31,7 @@ pub fn Thread(comptime itemType: type, comptime Reserve: type) type {
         }
         /// Spawn a thread
         pub fn spawn(self: *Self) !void {
-            self.handle = try std.Thread.spawn(.{ .allocator = if (Allocator) |*allocator| allocator.allocator() else return error.NullAllocator }, worker, .{self});
+            self.handle = try std.Thread.spawn(.{ .allocator = Allocator.allocator() }, worker, .{self});
         }
         /// Function that will process the queue on a new thread
         pub fn worker(self: *Self) void {
