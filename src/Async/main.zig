@@ -51,7 +51,7 @@ const CallError = error{
     WrongID,
     WrongFunctionType,
 };
-pub fn call(comptime function: anytype, args: anytype, FutureType: type, return_to: ?*FutureType) !JobQueue.PushReturn {
+pub fn call(comptime function: anytype, args: anytype, FutureType: type, return_to: ?*FutureType) !void {
     if (!Conf.is_singlethreaded()) {
         // Just wanted to try using blocks in zig...
         const item = item_blk: {
@@ -83,25 +83,35 @@ pub fn call(comptime function: anytype, args: anytype, FutureType: type, return_
                 .return_to = if (return_to) |address| @ptrCast(@alignCast(address)) else null,
             };
         };
-        const capacity = Threads.len;
-        var iterations = capacity;
-        var i = @mod(next_thread, capacity);
-        var thread = &Threads[i];
-        while (thread.reserved and iterations != 0) {
-            next_thread +%= 1;
-            iterations -= 1;
-            if (i >= capacity) i = 0;
-            i = @mod(next_thread, capacity);
-            thread = &Threads[i];
-        }
-        next_thread = i +% 1;
-        var reserve = Task.Reserve{ .thread = thread };
-
-        return reserve.call(item);
+        return call_thread_select(item);
     }
     const returned = @call(.auto, function, args);
     if (FutureType != void) if (return_to) |future| future.set(returned);
-    return .ok;
+}
+
+pub fn reserve(n: u16) !Task.Reserve {
+    if (Conf.is_singlethreaded()) return Task.ReserveError.Singlethreaded;
+    if (n > Threads.len) return Task.ReserveError.OutOfBounds;
+    const thread = &Threads[n];
+    if (thread.reserved) return Task.ReserveError.AlreadyReserved;
+    thread.reserved = true;
+    return Task.Reserve{ .thread = thread };
+}
+pub fn call_thread_select(item: Task.Call) !void {
+    const capacity = Threads.len;
+    var iterations = capacity;
+    var i = @mod(next_thread, capacity);
+    var thread = &Threads[i];
+    while (thread.reserved and iterations != 0) {
+        next_thread +%= 1;
+        iterations -= 1;
+        if (i >= capacity) i = 0;
+        i = @mod(next_thread, capacity);
+        thread = &Threads[i];
+    }
+    next_thread = i +% 1;
+
+    return Task.call_thread(thread, item);
 }
 
 pub fn scheduleRepeated(comptime function: anytype, args: anytype, rate: ?std.Io.Duration) !scheduler.Handle {
@@ -187,12 +197,11 @@ pub fn updateSchedule() !void {
                 thread = &Threads[i];
             }
             next_thread = i +% 1;
-            var reserve = Task.Reserve{ .thread = thread };
 
-            _ = try reserve.call(call_item);
+            try Task.call_thread(thread, call_item);
         } else {
             call_item.function(call_item);
-            if (item.at == null) item.self_destroy(&item);
+            if (item.at == null) item.self_destroy(item);
         }
     }
 }

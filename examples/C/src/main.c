@@ -1,16 +1,20 @@
 #include <Async.h>
 #include <IO.h>
 #include <stdlib.h>
+// this will expose those functions to the engine
+#define Engine __declspec(dllexport)
 
 void *future = NULL;
 void *wrapper(void *ctx) {
+    // Because in C we can't pass types we have to allocate a cell and pass it's pointer to future,
+    // then we can read the value by dereferencing and freeing the cell on our own
     int *returned = malloc(sizeof(int));
     IO_print("Hello, %s", "from other thread!\n");
     *returned = 0;
     return (void *)returned;
 }
 
-__declspec(dllexport) int init() {
+Engine int init() {
     future = Async_FutureCreate();
     if (future == NULL) {
         IO_print("Couldn't create future!\n");
@@ -29,7 +33,7 @@ __declspec(dllexport) int init() {
     return 0;
 }
 
-__declspec(dllexport) void deinit() {
+Engine void deinit() {
     Async_FutureDestroy(future);
 }
 

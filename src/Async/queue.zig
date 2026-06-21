@@ -30,65 +30,54 @@ pub fn Queue(comptime ItemType: type) type {
         pub fn deinit(self: *Self) void {
             Allocator.allocator().free(self.buffer);
         }
-
-        pub fn push(self: *Self, item: ItemType) PushReturn {
-            var enqueue = self.ENqueue.load(.acquire);
+        pub const PushError = error{Full};
+        pub fn push(self: *Self, item: ItemType) PushError!void {
+            var enqueue = self.ENqueue.load(.monotonic);
 
             while (true) {
                 const cell = &self.buffer[enqueue & self.mask];
-                // Safe subtract(as we cast to isize we lose first bit, which isn't very important as we only need range from -1 to 1)
-                const diff = @as(isize, @bitCast(cell.sequence.load(.acquire) -% enqueue));
-                if (diff > 0) {
-                    // Some thread was ahead of us, try again
-                    enqueue += 1;
-                    continue;
-                } else if (diff < 0) {
-                    // Other thread is working on this object or full queue
-                    if (enqueue & self.mask == 0) return PushReturn.Full;
-                    // if it's other thread try again
-                    continue;
-                }
+                const sequence = cell.sequence.load(.acquire);
+                const diff = @as(isize, @bitCast(sequence -% enqueue));
 
-                // Try to write the value and check again if other thread was ahead of us
-                if (self.ENqueue.cmpxchgWeak(enqueue, enqueue +% 1, .monotonic, .monotonic)) |actual_enqueue| {
-                    // FAILED: Another thread swooped in and grabbed this ticket
-                    // 'actual_enqueue' holds the new value of ENqueue. Update this local variable and retry.
-                    enqueue = actual_enqueue;
-                    continue;
+                if (diff == 0) {
+                    if (self.ENqueue.cmpxchgWeak(enqueue, enqueue +% 1, .monotonic, .monotonic)) |actual_enqueue| {
+                        enqueue = actual_enqueue;
+                        continue;
+                    }
+                    cell.data = item;
+                    cell.sequence.store(enqueue +% 1, .release);
+                    return;
+                } else if (diff < 0) {
+                    return PushError.Full;
+                } else {
+                    enqueue = self.ENqueue.load(.monotonic);
                 }
-                cell.data = item;
-                cell.sequence.store(enqueue +% 1, .release);
-                return PushReturn.ok;
             }
         }
 
         pub fn pop(self: *Self) ?ItemType {
-            var dequeue = self.DEqueue.load(.acquire);
+            var dequeue = self.DEqueue.load(.monotonic);
 
             while (true) {
                 const cell = &self.buffer[dequeue & self.mask];
                 const sequence = cell.sequence.load(.acquire);
-                // Safe subtract(as we cast to isize we lose first bit, which isn't very important as we only need range from -1 to 1)
                 const diff = @as(isize, @bitCast(sequence -% (dequeue +% 1)));
-                if (diff < 0) {
-                    // Empty
+
+                if (diff == 0) {
+                    if (self.DEqueue.cmpxchgWeak(dequeue, dequeue +% 1, .monotonic, .monotonic)) |actual_dequeue| {
+                        dequeue = actual_dequeue;
+                        continue;
+                    }
+                    const item = cell.data;
+                    cell.data = null;
+
+                    cell.sequence.store(dequeue +% self.capacity, .release);
+                    return item;
+                } else if (diff < 0) {
                     return null;
-                } else if (diff > 0) {
+                } else {
                     dequeue = self.DEqueue.load(.monotonic);
                 }
-
-                // Try to return the value and check again if other thread was ahead of us
-                if (self.DEqueue.cmpxchgWeak(dequeue, dequeue +% 1, .monotonic, .monotonic)) |actual_dequeue| {
-                    // FAILED: Another thread swooped in and grabbed this ticket
-                    // 'actual_enqueue' holds the new value of ENqueue. Update this local variable and retry.
-                    dequeue = actual_dequeue;
-                    continue;
-                }
-                // Updating sequence to be
-                cell.sequence.store(dequeue +% self.capacity, .release);
-                const item = cell.data;
-
-                return item;
             }
         }
     };

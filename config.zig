@@ -7,5 +7,6 @@ pub var profile: *const fn () void = &default_profile;
 pub var ztracy_enable: bool = true;
 
 pub var c_bindings: bool = true;
+pub var use_lua: bool = true;
 
 pub fn default_profile() void {}

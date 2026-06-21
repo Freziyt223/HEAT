@@ -17,7 +17,7 @@ pub const Scheduler = struct {
         pub fn cancel(handle: Handle) !void {
             acquire();
             defer release();
-            for (Queue.items, 0..) |*item, idx| {
+            for (Queue.items, 0..) |item, idx| {
                 if (item.id == handle.id) {
                     item.self_destroy(item);
                     _ = Queue.popIndex(idx);
@@ -29,8 +29,8 @@ pub const Scheduler = struct {
     };
     pub const Call = struct {
         function: *const fn (Task.Call) void,
-        destroy: *const fn (*const Task.Call) void,
-        self_destroy: *const fn (*const Call) void,
+        destroy: *const fn (Task.Call) void,
+        self_destroy: *const fn (Call) void,
         allocator: ?*TrackingAllocator = null,
         args: ?*anyopaque,
         at: ?std.Io.Timestamp,

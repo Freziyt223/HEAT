@@ -38,7 +38,7 @@ pub fn Thread(comptime itemType: type, comptime Reserve: type) type {
             while (self.running.load(.seq_cst) and self.active.load(.acquire)) {
                 if (self.queue.pop()) |call| {
                     call.function(call);
-                    call.destroy(&call);
+                    call.destroy(call);
                 } else {
                     std.atomic.spinLoopHint();
                 }

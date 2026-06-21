@@ -13,6 +13,7 @@ const ResolvedOptions = struct {
     runtime_safety: bool,
     ztracy_enable: bool,
     c_bindings: bool,
+    use_lua: bool,
 };
 
 fn resolveOptions(b: *std.Build) ResolvedOptions {
@@ -22,7 +23,8 @@ fn resolveOptions(b: *std.Build) ResolvedOptions {
         .singlethreaded = b.option(bool, "singlethreaded", "Specify if engine should be compiled as singlethreaded") orelse Config.singlethreaded,
         .runtime_safety = b.option(bool, "runtime_safety", "Specify if engine should come with runtime data safety checks") orelse Config.runtime_safety,
         .ztracy_enable = b.option(bool, "ztracy", "Specify if program should come with ztracy benchmark tool") orelse Config.ztracy_enable,
-        .c_bindings = b.option(bool, "", "") orelse Config.c_bindings,
+        .c_bindings = b.option(bool, "Use_c_bindings", "Specify if program should come with c bindings(affects lua)") orelse Config.c_bindings,
+        .use_lua = b.option(bool, "use_lua", "Specify if engine should support lua") orelse Config.use_lua,
     };
 }
 
@@ -36,6 +38,10 @@ const ExecutableConfig = struct {
 
 pub fn build(b: *std.Build) void {
     options = resolveOptions(b);
+    const editor = b.step("editor", "Engine comes with default CLI program for lua parsing and project management");
+    const exe = addEditor(b);
+    const install_exe = b.addInstallArtifact(exe, .{});
+    editor.dependOn(&install_exe.step);
 }
 pub fn addExecutable(b: *std.Build, config: ExecutableConfig) *std.Build.Step.Compile {
     Config.profile();
@@ -54,6 +60,10 @@ pub fn addExecutable(b: *std.Build, config: ExecutableConfig) *std.Build.Step.Co
         .enable_ztracy = options.ztracy_enable,
     });
     const ztracy_mod = ztracy.module("root");
+    const luajit = b.dependency("zig_luajit", .{
+        .target = options.target,
+        .optimize = options.optimize,
+    }).module("luajit");
 
     // Memory usage tracking
     const TrackingAllocator = b.addModule(
@@ -108,6 +118,20 @@ pub fn addExecutable(b: *std.Build, config: ExecutableConfig) *std.Build.Step.Co
             .{ .name = "IO", .module = IO },
             .{ .name = "Async", .module = Async },
             .{ .name = "TrackingAllocator", .module = TrackingAllocator },
+            .{ .name = "Conf", .module = Conf },
+        },
+    }) else null;
+    const Lua = if (options.use_lua) b.addModule("Lua", .{
+        .target = options.target,
+        .optimize = options.optimize,
+        .link_libc = true,
+        .root_source_file = b.path("bindings/Lua/main.zig"),
+        .imports = &.{
+            .{ .name = "LuaJIT", .module = luajit },
+            .{ .name = "IO", .module = IO },
+            .{ .name = "Async", .module = Async },
+            .{ .name = "Conf", .module = Conf },
+            .{ .name = "TrackingAllocator", .module = TrackingAllocator },
         },
     }) else null;
     // Engine struct
@@ -125,6 +149,7 @@ pub fn addExecutable(b: *std.Build, config: ExecutableConfig) *std.Build.Step.Co
     });
     if (config.user_module) |user_module| user_module.addImport("Engine", Engine);
     if (C_API) |_| Engine.addIncludePath(b.path("bindings/C"));
+    if (Lua) |L| Engine.addImport("Lua", L);
 
     // Entrypoint of a final executable
     const Executable = b.addExecutable(.{
@@ -150,4 +175,17 @@ pub fn addExecutable(b: *std.Build, config: ExecutableConfig) *std.Build.Step.Co
     }
 
     return Executable;
+}
+
+pub fn addEditor(b: *std.Build) *std.Build.Step.Compile {
+    const main = b.addModule("Editor", .{
+        .root_source_file = b.path("src/Editor/main.zig"),
+        .target = options.target,
+        .optimize = options.optimize,
+    });
+    const exe = b.addExecutable(.{
+        .name = "HEAT",
+        .root_module = main,
+    });
+    return exe;
 }

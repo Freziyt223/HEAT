@@ -34,7 +34,7 @@ pub fn main_impl(Init: std.process.Init) !void {
     defer Engine.deinit();
 
     if (@hasDecl(User, "init"))
-        try User.init(Init.minimal.args)
+        try User.init(Engine.Init{ .args = Init.minimal.args, .allocator = gpa.allocator() })
     else if (init) |actual_init| {
         const returned = actual_init();
         std.debug.assert(returned == 0);

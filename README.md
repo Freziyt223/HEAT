@@ -40,11 +40,12 @@ Add those lines to your **build.zig**:
         .singlethreaded = false,
         .target = target
     });
-    //        Has to be exact name as in build.zig.zon
+    // Has to be exact name as in build.zig.zon
     const Exe = @import("HEAT").addExecutable(b, .{
         .name = "ExecutableName",
         .user_module = MyApp // module of your code
         // You can enter other options here if you want
+        //.runtime_safety = true,
     });
 ```
 Now in your code you can import and use the engine, here is an example:
@@ -55,14 +56,20 @@ const Self = @This();
 const Engine = @import("Engine");
 const Conf = @import("Conf");
 
-pub fn init(this: *Self, args: std.process.Args) !void {
-    _ = this;
+pub fn init(args: std.process.Args) !void {
     _ = args;
     try Engine.IO.print("Hello, {s}\n", .{"world!"});
 }
-pub fn deinit(this: *Self) void {
-    _ = this;
-}
+
+pub const update = struct {
+    pub fn update() !void {
+
+    }
+    // 60 ticks per second
+    pub const tick_rate: ?std.Io.Duration = .fromMicroseconds(16667);
+};
+
+pub fn deinit() void {}
 
 ```
 
@@ -82,7 +89,7 @@ const Config = HEAT_build.Config;
 HEAT_build.Config.profile = &load_profile;
 fn load_profile() {
     Config.singlethreaded = false;
-    Config.optimize_mode = .ReleaseSmall;
+    Config.optimize = .ReleaseSmall;
 }
 ```  
 All those config options and options passed on build are loaded into `Engine.Conf.BuildOptions`
