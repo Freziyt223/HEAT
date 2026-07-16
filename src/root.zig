@@ -10,7 +10,7 @@ pub var Allocator: TrackingAllocator = undefined;
 pub const IO = @import("IO");
 pub const Async = @import("Async");
 pub const ztracy = @import("ztracy");
-pub const Lua = @import("Lua");
+pub const GUI = @import("GUI");
 
 pub const StateEnum = enum(u8) { Quitting, Running, ErrorQutting };
 pub var State: std.atomic.Value(StateEnum) = .init(.Quitting);
@@ -19,12 +19,10 @@ pub fn init(Io: std.Io, allocator: std.mem.Allocator) !void {
     Allocator = TrackingAllocator.init(allocator, "Global");
     try IO.init(Io);
     try Async.init(Allocator.allocator(), .{ .NumberOfThreads = Conf.NumberOfThreads, .QueueCapacity_EVEN = Conf.QueueCapacity_EVEN });
-    try Lua.init(Allocator.allocator());
     errdefer State.store(.ErrorQutting, .unordered);
     State.store(.Running, .unordered);
 }
 pub fn deinit() void {
-    Lua.deinit();
     Async.deinit();
 }
 pub const Init = struct {

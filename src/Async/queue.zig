@@ -1,6 +1,7 @@
 const std = @import("std");
 const Atomic = std.atomic.Value;
 const TrackingAllocator = @import("TrackingAllocator");
+const IO = @import("IO");
 
 /// MPMC Vyukov's design, uses bitshift operations for blazing fast modulas,
 /// which requires capacity to be power of 2
@@ -17,11 +18,12 @@ pub fn Queue(comptime ItemType: type) type {
         mask: usize,
         ENqueue: Atomic(usize) = .init(0),
         DEqueue: Atomic(usize) = .init(0),
+        semaphore: std.Io.Semaphore,
 
         pub fn init(capacity_EVEN: usize) !Self {
             const capacity_1 = capacity_EVEN - 1;
             std.debug.assert(capacity_EVEN & capacity_1 == 0);
-            const Return = Self{ .capacity = capacity_EVEN, .mask = capacity_1, .buffer = try Allocator.allocator().alloc(Cell, capacity_EVEN) };
+            const Return = Self{ .capacity = capacity_EVEN, .mask = capacity_1, .buffer = try Allocator.allocator().alloc(Cell, capacity_EVEN), .semaphore = .{ .permits = capacity_1 } };
             for (0..capacity_EVEN) |i| {
                 Return.buffer[i].sequence.store(i, .unordered);
             }
@@ -46,6 +48,7 @@ pub fn Queue(comptime ItemType: type) type {
                     }
                     cell.data = item;
                     cell.sequence.store(enqueue +% 1, .release);
+                    self.semaphore.post(IO.Io);
                     return;
                 } else if (diff < 0) {
                     return PushError.Full;

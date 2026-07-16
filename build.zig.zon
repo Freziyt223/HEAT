@@ -15,5 +15,21 @@
             .url = "https://github.com/sackosoft/zig-luajit.git",
             .hash = "luajit-3.0.0-nMGF0vfCAwBfUsknnnrxFWEDZ4G6sOgppH6DGzWgn7fV",
         },
+        .zglfw = .{
+            .url = "git+https://github.com/zig-gamedev/zglfw#main",
+            .hash = "zglfw-0.10.0-dev-zgVDNIy4IQDJNRy4jrP1As-SZxfJpuWhU1iJ-wBab_VD",
+        },
+        .zgui = .{
+            .url = "git+https://github.com/zig-gamedev/zgui#main",
+            .hash = "zgui-0.6.0-dev--L6sZJhIbgAjWdK5h6xuVUrsOcD-RdqEOEPf03Zgi4mF",
+        },
+        .vulkan_headers = .{
+            .url = "git+https://github.com/KhronosGroup/Vulkan-Headers",
+            .hash = "N-V-__8AAATxegKi7qFv2x8gscX3gdc1xWt7_7jeV0q_XhJ9",
+        },
+        .vulkan_zig = .{
+            .url = "git+https://github.com/Snektron/vulkan-zig#master",
+            .hash = "vulkan-0.0.0-r7Ytx8t9AwDbdPvKCQU2qrevpeTvH9v4E9iSrnA46zZU",
+        },
     },
 }

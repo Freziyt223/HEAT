@@ -10,6 +10,7 @@ pub const Task = @import("task.zig");
 pub const Scheduler = @import("scheduler.zig");
 const scheduler = Scheduler.Scheduler;
 pub const Thread = Task.Thread;
+pub const Reserve = Task.Reserve;
 pub const JobQueue = Task.JobQueue;
 
 /// Thread pool(dirrect calls)
@@ -29,14 +30,17 @@ pub fn init(allocator: std.mem.Allocator, config: Config) !void {
     // Initializing threads
     if (!Conf.is_singlethreaded()) {
         Threads = try Thread.Allocator.allocator().alloc(Thread, config.NumberOfThreads);
-        for (Threads[0..]) |*thread| {
-            thread.* = try Thread.init(config.QueueCapacity_EVEN, Threads[0..], &running);
+        for (Threads[0..], 0..config.NumberOfThreads) |*thread, i| {
+            thread.* = try Thread.init(config.QueueCapacity_EVEN, Threads[0..], &running, i);
             try thread.spawn();
         }
     }
 }
 pub fn deinit() void {
     running.store(false, .release);
+    for (Threads) |*thread| {
+        thread.queue.semaphore.post(IO.Io);
+    }
     scheduler.deinit();
     if (!Conf.is_singlethreaded()) {
         for (Threads) |*thread| {
@@ -83,21 +87,21 @@ pub fn call(comptime function: anytype, args: anytype, FutureType: type, return_
                 .return_to = if (return_to) |address| @ptrCast(@alignCast(address)) else null,
             };
         };
-        return call_thread_select(item);
+        _ = try call_thread_select(item);
+        return;
     }
     const returned = @call(.auto, function, args);
     if (FutureType != void) if (return_to) |future| future.set(returned);
 }
 
-pub fn reserve(n: u16) !Task.Reserve {
+pub fn reserve(n: u16, lock: bool) !Task.Reserve {
     if (Conf.is_singlethreaded()) return Task.ReserveError.Singlethreaded;
     if (n > Threads.len) return Task.ReserveError.OutOfBounds;
     const thread = &Threads[n];
-    if (thread.reserved) return Task.ReserveError.AlreadyReserved;
-    thread.reserved = true;
-    return Task.Reserve{ .thread = thread };
+    if (lock) thread.reserved = true;
+    return @ptrCast(thread);
 }
-pub fn call_thread_select(item: Task.Call) !void {
+pub fn call_thread_select(item: Task.Call) !usize {
     const capacity = Threads.len;
     var iterations = capacity;
     var i = @mod(next_thread, capacity);
@@ -111,7 +115,8 @@ pub fn call_thread_select(item: Task.Call) !void {
     }
     next_thread = i +% 1;
 
-    return Task.call_thread(thread, item);
+    try Task.call_thread(thread, item);
+    return i;
 }
 
 pub fn scheduleRepeated(comptime function: anytype, args: anytype, rate: ?std.Io.Duration) !scheduler.Handle {
@@ -129,7 +134,7 @@ pub fn scheduleRepeated(comptime function: anytype, args: anytype, rate: ?std.Io
         .allocator = Allocator,
         .args = args_stored,
         .rate = rate,
-        .at = if (rate) |rt| std.Io.Timestamp.now(IO.io, .awake).addDuration(rt) else null,
+        .at = if (rate) |rt| std.Io.Timestamp.now(IO.Io, .awake).addDuration(rt) else null,
         .id = scheduler.nextId(),
     };
     return scheduler.push(item);
@@ -162,7 +167,7 @@ pub fn cancelSchedule(handle: scheduler.Handle) !void {
 
 pub fn updateSchedule() !void {
     while (true) {
-        const now = std.Io.Timestamp.now(IO.io, .awake);
+        const now = std.Io.Timestamp.now(IO.Io, .awake);
         const maybe_item = scheduler.peek();
         if (maybe_item == null) break;
 
@@ -179,7 +184,7 @@ pub fn updateSchedule() !void {
             new_item.id = scheduler.nextId();
             _ = try scheduler.push(new_item);
         }
-        const call_item = Task.Call{
+        var call_item = Task.Call{
             .function = item.function,
             .destroy = if (item.rate != null) &Task.null_destroy else item.destroy,
             .args = item.args,
@@ -197,7 +202,7 @@ pub fn updateSchedule() !void {
                 thread = &Threads[i];
             }
             next_thread = i +% 1;
-
+            if (item.setup) |func| func(&call_item, i);
             try Task.call_thread(thread, call_item);
         } else {
             call_item.function(call_item);

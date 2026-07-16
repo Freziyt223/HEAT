@@ -18,10 +18,10 @@ pub const JobQueue = Thread.Queue;
 /// I've made this struct to merge general calls and thread-reserved calls
 /// Generally this should allow users to access threads directly,
 /// pin them so random calls won't be called in it
-pub const ReserveError = error{ Singlethreaded, OutOfBounds, AlreadyReserved };
+pub const ReserveError = error{ Singlethreaded, OutOfBounds };
 pub const Reserve = struct {
     thread: *Thread,
-    pub fn call(self: *Reserve, comptime function: anytype, args: anytype, FutureType: type, return_to: ?*FutureType) !void {
+    pub fn call(self: Reserve, comptime function: anytype, args: anytype, FutureType: type, return_to: ?*FutureType) !void {
         if (!Conf.is_singlethreaded()) {
             // Just wanted to try using blocks in zig...
             const item = item_blk: {
@@ -57,6 +57,9 @@ pub const Reserve = struct {
         }
         const returned = @call(.auto, function, args);
         if (FutureType != void) if (return_to) |future| future.set(returned);
+    }
+    pub fn unlock(self: Reserve) void {
+        self.thread.reserved = false;
     }
 };
 pub fn call_thread(self: *Thread, item: Call) !void {

@@ -2,6 +2,7 @@ const std = @import("std");
 const Atomic = std.atomic.Value;
 pub const queue = @import("queue.zig");
 const TrackingAllocator = @import("TrackingAllocator");
+const IO = @import("IO");
 
 pub fn Thread(comptime itemType: type, comptime Reserve: type) type {
     return struct {
@@ -11,6 +12,7 @@ pub fn Thread(comptime itemType: type, comptime Reserve: type) type {
 
         handle: std.Thread = undefined,
         queue: Queue,
+        id: usize,
         //Not used for now
         //cache: []u1,
         active: std.atomic.Value(bool) = .init(false),
@@ -22,8 +24,8 @@ pub fn Thread(comptime itemType: type, comptime Reserve: type) type {
 
         /// Initializing thread and queue
         /// queueCapacity_EVEN has to be a power of 2
-        pub fn init(capacity_EVEN: usize, thread_pool: []Self, running: *Atomic(bool)) !Self {
-            return Self{ .queue = try .init(capacity_EVEN), .thread_pool = thread_pool, .running = running, .active = .init(true) };
+        pub fn init(capacity_EVEN: usize, thread_pool: []Self, running: *Atomic(bool), id: usize) !Self {
+            return Self{ .queue = try .init(capacity_EVEN), .thread_pool = thread_pool, .running = running, .active = .init(true), .id = id };
         }
         pub fn deinit(self: *Self) void {
             self.handle.join();
@@ -36,6 +38,10 @@ pub fn Thread(comptime itemType: type, comptime Reserve: type) type {
         /// Function that will process the queue on a new thread
         pub fn worker(self: *Self) void {
             while (self.running.load(.seq_cst) and self.active.load(.acquire)) {
+                self.queue.semaphore.wait(IO.Io) catch {
+                    std.debug.print("Io Cancellable in semaphore.wait()!\n", .{});
+                };
+
                 if (self.queue.pop()) |call| {
                     call.function(call);
                     call.destroy(call);

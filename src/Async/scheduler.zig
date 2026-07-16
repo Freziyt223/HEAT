@@ -37,6 +37,7 @@ pub const Scheduler = struct {
         rate: ?std.Io.Duration = null,
         return_to: ?*anyopaque = null,
         id: usize = 0,
+        setup: ?*const fn (call: *Task.Call, thread_id: usize) void = null,
     };
     pub var Queue = std.PriorityQueue(Call, void, comparator).empty;
     pub var locked = Atomic(bool).init(false);

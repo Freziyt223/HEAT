@@ -2,6 +2,8 @@ HEAT is a project of making a free modular game engine with core focus on modula
 
 ![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/Freziyt223/HEAT/main.yml)
 
+For now lua doesn't work:( needs big polishing
+
 # Table of contents
 - [Something very important](#something-very-important)
 - [Features](#features)
@@ -16,8 +18,12 @@ std.Build.StandartOptimizeOptions(.{}); Doesn't pass optimize correctly to the d
 I'll write this later
 
 ## Usage
+Some specifications:
+- GUI doesn't support linux for now, i will make my way to support most OS's
+
 To use this engine in your code you have to:
 - Have `Zig 0.16.0 or higher`
+- (recommended) Have `git`
 
 Add HEAT to your **build.zig.zon**:
 ```zig

@@ -98,7 +98,7 @@ pub export fn Async_call(function: *const fn (?*anyopaque) callconv(.c) ?*anyopa
             .args = @ptrCast(@alignCast(full_ctx)),
             .return_to = if (target_future) |address| @ptrCast(@alignCast(address)) else null,
         };
-        Async.call_thread_select(item) catch return 1;
+        _ = Async.call_thread_select(item) catch return 1;
         return 0;
     }
     const returned = function(ctx);
@@ -109,7 +109,6 @@ pub export fn Async_reserve(n: c_ushort, reserve: **anyopaque) callconv(.c) c_in
     if (Conf.is_singlethreaded()) return @intFromError(Async.Task.ReserveError.Singlethreaded);
     if (n > Async.Threads.len) return @intFromError(Async.Task.ReserveError.OutOfBounds);
     const thread = &Async.Threads[n];
-    if (thread.reserved) return @intFromError(Async.Task.ReserveError.AlreadyReserved);
     thread.reserved = true;
     reserve.* = @ptrCast(@alignCast(thread));
     return 0;

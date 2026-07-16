@@ -3,18 +3,18 @@ const std = @import("std");
 const HEAT = @import("HEAT");
 
 /// *Compile used here to return to examples' build.zig, in your case it will be !void
-pub fn build(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) !*std.Build.Step.Compile {
+pub fn build(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) ![]*std.Build.Step.Compile {
     // You have to use HEAT's builder for `addExecutable` function
     const HEAT_dep = b.dependency("HEAT", .{});
     const builder = HEAT_dep.builder;
 
     // creation of a program Example
-    const exe = HEAT.addExecutable(builder, .{
+    const binaries = try HEAT.addExecutable(builder, .{
         .name = "C",
         .target = target,
         .optimize = optimize,
     });
-    exe.root_module.addCSourceFile(.{ .file = b.path("C/src/main.c") });
+    binaries[0].root_module.addCSourceFile(.{ .file = b.path("C/src/main.c") });
 
-    return exe;
+    return binaries;
 }

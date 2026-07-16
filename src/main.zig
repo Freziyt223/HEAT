@@ -28,16 +28,24 @@ pub fn main_impl(Init: std.process.Init) !void {
 
     Engine.IO.Allocator = Engine.TrackingAllocator.init(gpa.allocator(), "IOAllocator");
     var threaded = std.Io.Threaded.init(Engine.IO.Allocator.allocator(), .{});
+    defer threaded.deinit();
     const io = threaded.io();
 
     try Engine.init(io, Conf.GlobalAllocator orelse gpa.allocator());
     defer Engine.deinit();
-
-    if (@hasDecl(User, "init"))
-        try User.init(Engine.Init{ .args = Init.minimal.args, .allocator = gpa.allocator() })
-    else if (init) |actual_init| {
-        const returned = actual_init();
-        std.debug.assert(returned == 0);
+    if (@hasDecl(User, "init")) {
+        const FutureType = Engine.Async.Future(@typeInfo(@TypeOf(User.init)).@"fn".return_type.?);
+        var Future: FutureType = .{};
+        try Engine.Async.call(User.init, .{Engine.Init{ .args = Init.minimal.args, .allocator = gpa.allocator() }}, FutureType, &Future);
+        try Future.wait();
+    } else if (init) |actual_init| {
+        const FutureType = Engine.Async.Future(c_int);
+        var Future: FutureType = .{};
+        try Engine.Async.call(actual_init, .{}, FutureType, &Future);
+        const returned = Future.wait();
+        if (returned != 0) {
+            @panic("Caught an error!\n");
+        }
     }
 
     defer if (@hasDecl(User, "deinit"))
@@ -93,4 +101,5 @@ pub fn main_impl(Init: std.process.Init) !void {
         },
         else => @panic("Wrong type of User update!"),
     };
+    Engine.State.store(.Quitting, .release);
 }
