@@ -15,6 +15,7 @@ pub const JobQueue = Task.JobQueue;
 
 /// Thread pool(dirrect calls)
 pub var Threads: []Task.Thread = undefined;
+pub var MainQueue: Thread.Queue = .init(4);
 pub var running: Atomic(bool) = .init(true);
 
 pub var next_thread: usize = 0;
@@ -88,6 +89,44 @@ pub fn call(comptime function: anytype, args: anytype, FutureType: type, return_
             };
         };
         _ = try call_thread_select(item);
+        return;
+    }
+    const returned = @call(.auto, function, args);
+    if (FutureType != void) if (return_to) |future| future.set(returned);
+}
+pub fn callMain(comptime function: anytype, args: anytype, FutureType: type, return_to: ?*FutureType) !void {
+    if (!Conf.is_singlethreaded()) {
+        // Just wanted to try using blocks in zig...
+        const item = item_blk: {
+            const Allocator = &JobQueue.Allocator;
+            const args_type = @TypeOf(args);
+            const wrapper = try Task.wrap(function, args_type, Task.Call);
+            break :item_blk Task.Call{
+                .function = wrapper.exec,
+                .destroy = wrapper.destroy,
+                .allocator = Allocator,
+                .args = args_blk: {
+                    switch (@typeInfo(args_type)) {
+                        .optional => {
+                            if (args) |args_actual| {
+                                const allocator = Allocator.allocator();
+                                const stored = try allocator.create(args_type);
+                                stored.* = args_actual;
+                                break :args_blk stored;
+                            } else break :args_blk null;
+                        },
+                        else => {
+                            const allocator = Allocator.allocator();
+                            const stored = try allocator.create(args_type);
+                            stored.* = args;
+                            break :args_blk stored;
+                        },
+                    }
+                },
+                .return_to = if (return_to) |address| @ptrCast(@alignCast(address)) else null,
+            };
+        };
+        try MainQueue.push(item);
         return;
     }
     const returned = @call(.auto, function, args);
@@ -208,6 +247,10 @@ pub fn updateSchedule() !void {
             call_item.function(call_item);
             if (item.at == null) item.self_destroy(item);
         }
+    }
+    while (MainQueue.pop()) |c| {
+        c.function(c);
+        c.destroy();
     }
 }
 

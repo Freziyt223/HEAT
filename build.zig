@@ -3,8 +3,6 @@
 const std = @import("std");
 pub const Config = @import("config.zig");
 /// Configuration of this build
-var options: ?ResolvedOptions = null;
-
 const ResolvedOptions = struct {
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
@@ -14,12 +12,15 @@ const ResolvedOptions = struct {
     ztracy_enable: bool,
     c_bindings: bool,
     use_lua: bool,
+    use_glfw: bool,
+    gui: bool,
     zgui_shared: bool,
     build_vulkan: bool,
     build_opengl: bool,
     build_directx: bool,
     renderer: Config.renderer_enum,
 };
+var options: ?ResolvedOptions = null;
 
 fn resolveOptions(b: *std.Build) ResolvedOptions {
     return .{
@@ -30,6 +31,8 @@ fn resolveOptions(b: *std.Build) ResolvedOptions {
         .ztracy_enable = b.option(bool, "ztracy", "Specify if program should come with ztracy benchmark tool") orelse Config.ztracy_enable,
         .c_bindings = b.option(bool, "Use_c_bindings", "Specify if program should come with c bindings(affects lua)") orelse Config.c_bindings,
         .use_lua = b.option(bool, "use_lua", "Specify if engine should support lua") orelse Config.use_lua,
+        .use_glfw = b.option(bool, "use_glfw", "Specify if engine should use glfw") orelse Config.use_glfw,
+        .gui = b.option(bool, "gui", "Specify if engine should come with any GUI and rendering code") orelse Config.gui,
         .zgui_shared = b.option(bool, "zgui_shared", "Specify if zgui should be built as shared library") orelse Config.Dependencies.zgui.shared,
         .build_vulkan = b.option(bool, "build_vulkan", "Specify if vulkan renderer should be included") orelse Config.build_vulkan,
         .build_opengl = b.option(bool, "build_opengl", "Specify if opengl renderer should be included") orelse Config.build_opengl,
@@ -45,16 +48,6 @@ const ExecutableConfig = struct {
     target: ?std.Build.ResolvedTarget = null,
     optimize: ?std.builtin.OptimizeMode = null,
 };
-
-pub fn build(b: *std.Build) !void {
-    options = resolveOptions(b);
-    const editor = b.step("editor", "Engine comes with default CLI program for lua parsing and project management");
-    const binaries = try addEditor(b);
-    for (binaries) |bin| {
-        const install = b.addInstallArtifact(bin, .{});
-        editor.dependOn(&install.step);
-    }
-}
 pub fn addExecutable(b: *std.Build, config: ExecutableConfig) ![]*std.Build.Step.Compile {
     Config.profile();
     if (options == null) options = resolveOptions(b);
@@ -62,6 +55,7 @@ pub fn addExecutable(b: *std.Build, config: ExecutableConfig) ![]*std.Build.Step
     const options_step = b.addOptions();
     options_step.addOption(bool, "singlethreaded", opts.singlethreaded);
     options_step.addOption(bool, "runtime_safety", opts.runtime_safety);
+    options_step.addOption(bool, "gui", opts.gui);
     options_step.addOption(bool, "has_user", if (config.user_module) |_| true else false);
     options_step.addOption(Config.renderer_enum, "renderer", opts.renderer);
     // Arguments passed to this build are composed to a module
@@ -79,21 +73,21 @@ pub fn addExecutable(b: *std.Build, config: ExecutableConfig) ![]*std.Build.Step
         .target = opts.target,
         .optimize = opts.optimize,
     }).module("luajit");
-    const glfw_dep = b.dependency("zglfw", .{
+    const glfw_dep = if (opts.gui and opts.use_glfw) b.dependency("zglfw", .{
         .target = opts.target,
         .optimize = opts.optimize,
-        .import_vulkan = if (opts.build_vulkan) true else false,
-    });
-    const glfw = glfw_dep.module("root");
-    const vulkan_zig = b.dependency("vulkan_zig", .{
+        .import_vulkan = opts.build_vulkan,
+    }) else null;
+    const glfw = if (glfw_dep) |dep| dep.module("root") else null;
+    const vulkan_zig = if (opts.gui and opts.build_vulkan) b.dependency("vulkan_zig", .{
         .registry = b.dependency("vulkan_headers", .{}).path("registry/vk.xml"),
-    }).module("vulkan-zig");
-    const zgui_dep = b.dependency("zgui", .{
+    }).module("vulkan-zig") else null;
+    const zgui_dep = if (opts.gui) b.dependency("zgui", .{
         .target = opts.target,
         .optimize = opts.optimize,
         .shared = false,
         .backend = .no_backend,
-    });
+    }) else null;
 
     // Memory usage tracking
     const TrackingAllocator = b.addModule(
@@ -151,27 +145,36 @@ pub fn addExecutable(b: *std.Build, config: ExecutableConfig) ![]*std.Build.Step
             .{ .name = "Conf", .module = Conf },
         },
     }) else null;
-    const Interface = b.addModule("GUI_interface", .{
+    const Interface = if (opts.gui) b.addModule("GUI_interface", .{
         .root_source_file = b.path("src/GUI/interface.zig"),
         .target = opts.target,
         .optimize = opts.optimize,
         .imports = &.{
             .{ .name = "Async", .module = Async },
         },
+    }) else null;
+    const GUI = b.addModule("GUI", .{
+        .root_source_file = if (opts.gui) b.path("src/GUI/main.zig") else b.path("src/GUI/stub.zig"),
+        .target = opts.target,
+        .optimize = opts.optimize,
+        .imports = &.{
+            .{ .name = "TrackingAllocator", .module = TrackingAllocator },
+        },
     });
+    if (Interface) |iface| GUI.addImport("Interface", iface);
 
-    const vulkan = if (opts.build_vulkan and (opts.renderer == .vulkan or opts.renderer == .automatic)) blk: {
+    const vulkan = if (opts.gui and opts.use_glfw and opts.build_vulkan and (opts.renderer == .vulkan or opts.renderer == .automatic)) blk: {
         const mod = b.addModule("Vulkan_backend", .{
             .root_source_file = b.path("src/GUI/vulkan/main.zig"),
             .target = opts.target,
             .optimize = opts.optimize,
             .imports = &.{
-                .{ .name = "Interface", .module = Interface },
+                .{ .name = "Interface", .module = Interface.? },
                 .{ .name = "TrackingAllocator", .module = TrackingAllocator },
-                .{ .name = "glfw", .module = glfw },
-                .{ .name = "vulkan", .module = vulkan_zig },
+                .{ .name = "glfw", .module = glfw.? },
+                .{ .name = "vulkan", .module = vulkan_zig.? },
                 .{ .name = "zgui_backend", .module = b.createModule(.{
-                    .root_source_file = zgui_dep.path("src/backend_glfw_vulkan.zig"),
+                    .root_source_file = zgui_dep.?.path("src/backend_glfw_vulkan.zig"),
                     .target = opts.target,
                     .optimize = opts.optimize,
                 }) },
@@ -179,8 +182,10 @@ pub fn addExecutable(b: *std.Build, config: ExecutableConfig) ![]*std.Build.Step
                 .{ .name = "Conf", .module = Conf },
             },
         });
-        if (opts.target.result.os.tag != .emscripten) mod.linkLibrary(glfw_dep.artifact("glfw"));
-        mod.linkLibrary(zgui_dep.artifact("imgui"));
+        if (glfw_dep) |dep| {
+            if (opts.target.result.os.tag != .emscripten) mod.linkLibrary(dep.artifact("glfw"));
+        }
+        mod.linkLibrary(zgui_dep.?.artifact("imgui"));
         const lib = b.addLibrary(.{
             .name = "vulkan",
             .linkage = .dynamic,
@@ -188,18 +193,7 @@ pub fn addExecutable(b: *std.Build, config: ExecutableConfig) ![]*std.Build.Step
         });
         break :blk lib;
     } else null;
-
-    const GUI = b.addModule("GUI", .{
-        .root_source_file = b.path("src/GUI/main.zig"),
-        .target = opts.target,
-        .optimize = opts.optimize,
-        .imports = &.{
-            .{ .name = "Interface", .module = Interface },
-            .{ .name = "Conf", .module = Conf },
-            .{ .name = "glfw", .module = glfw },
-            .{ .name = "Async", .module = Async },
-        },
-    });
+    if (vulkan) |vk| GUI.addImport("vulkan", vk.root_module);
 
     const Lua = if (opts.use_lua) b.addModule("Lua", .{
         .target = opts.target,
@@ -277,4 +271,14 @@ pub fn addEditor(b: *std.Build) ![]*std.Build.Step.Compile {
         .user_module = main,
     });
     return binaries;
+}
+
+pub fn build(b: *std.Build) !void {
+    options = resolveOptions(b);
+    const editor = b.step("editor", "Engine comes with default CLI program for lua parsing and project management");
+    const binaries = try addEditor(b);
+    for (binaries) |bin| {
+        const install = b.addInstallArtifact(bin, .{});
+        editor.dependOn(&install.step);
+    }
 }

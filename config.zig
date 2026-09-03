@@ -8,6 +8,8 @@ pub var ztracy_enable: bool = true;
 
 pub var c_bindings: bool = true;
 pub var use_lua: bool = true;
+pub var use_glfw: bool = true;
+pub var gui: bool = true;
 
 pub const Dependencies = struct {
     pub const zgui = struct {
