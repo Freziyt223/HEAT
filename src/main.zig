@@ -21,7 +21,7 @@ pub fn main_impl(Init: std.process.Init) !void {
         User.conf();
     // Making a globall allocator instance
     var gpa = std.heap.DebugAllocator(.{
-        .thread_safe = Conf.BuildOptions.singlethreaded,
+        .thread_safe = !Conf.BuildOptions.singlethreaded,
         .safety = Conf.BuildOptions.runtime_safety,
     }).init;
     defer std.debug.assert(gpa.deinit() == .ok);
@@ -33,19 +33,14 @@ pub fn main_impl(Init: std.process.Init) !void {
 
     try Engine.init(io, Conf.GlobalAllocator orelse gpa.allocator());
     defer Engine.deinit();
+    const FutureType = if (@hasDecl(User, "init")) Engine.Async.Future(@typeInfo(@TypeOf(User.init)).@"fn".return_type.?) else Engine.Async.Future(c_int);
+    var Future: FutureType = .{};
     if (@hasDecl(User, "init")) {
-        const FutureType = Engine.Async.Future(@typeInfo(@TypeOf(User.init)).@"fn".return_type.?);
-        var Future: FutureType = .{};
-        try Engine.Async.call(User.init, .{Engine.Init{ .args = Init.minimal.args, .allocator = gpa.allocator() }}, FutureType, &Future);
-        try Future.wait();
+        // User initialization may create windows or otherwise call GLFW.
+        // GLFW requires these operations to run on the main thread.
+        try Engine.Async.callMain(User.init, .{Engine.Init{ .args = Init.minimal.args, .allocator = gpa.allocator() }}, FutureType, &Future);
     } else if (init) |actual_init| {
-        const FutureType = Engine.Async.Future(c_int);
-        var Future: FutureType = .{};
         try Engine.Async.call(actual_init, .{}, FutureType, &Future);
-        const returned = Future.wait();
-        if (returned != 0) {
-            @panic("Caught an error!\n");
-        }
     }
 
     defer if (@hasDecl(User, "deinit"))
@@ -58,28 +53,69 @@ pub fn main_impl(Init: std.process.Init) !void {
     // instead of checking them each tick
     if (@hasDecl(User, "update")) switch (@typeInfo(@TypeOf(User.update))) {
         .@"fn" => {
+            while (Engine.State.load(.acquire) == .Running) {
+                Engine.GUI.glfwPollEvents();
+                try Engine.Async.updateSchedule();
+                if (Future.tryValue()) |value| {
+                    if (@TypeOf(value) == c_int) {
+                        if (value != 0) return error.UserInitFailed;
+                    } else {
+                        try value;
+                    }
+
+                    break;
+                }
+            }
             const handle = try Engine.Async.scheduleRepeated(User.update, .{}, null);
             while (Engine.State.load(.acquire) == .Running) {
+                Engine.GUI.glfwPollEvents();
                 try Engine.Async.updateSchedule();
             }
-            try handle.cancel();
+            handle.cancel();
         },
         // Declaration is pub const update = struct {pub fn update() !void {...}; pub const tick_rate: ?std.Io.Duration = null;}
         .type => {
             if (@hasDecl(User.update, "update")) switch (@typeInfo(@TypeOf(User.update.update))) {
                 .@"fn" => {
                     if (@hasDecl(User.update, "tick_rate")) {
-                        const handle = try Engine.Async.scheduleRepeated(User.update, .{}, User.update.tick_rate);
                         while (Engine.State.load(.acquire) == .Running) {
+                            Engine.GUI.glfwPollEvents();
+                            try Engine.Async.updateSchedule();
+                            if (Future.tryValue()) |value| {
+                                if (@TypeOf(value) == c_int) {
+                                    if (value != 0) return error.UserInitFailed;
+                                } else {
+                                    try value;
+                                }
+
+                                break;
+                            }
+                        }
+                        const handle = try Engine.Async.scheduleRepeated(User.update.update, .{}, User.update.tick_rate);
+                        while (Engine.State.load(.acquire) == .Running) {
+                            Engine.GUI.glfwPollEvents();
                             try Engine.Async.updateSchedule();
                         }
-                        try handle.cancel();
+                        handle.cancel();
                     } else @panic("User update struct has to contain \"tick_rate\" field!");
                 },
                 else => @panic("update field in User update struct must be a function!"),
             };
         },
         .array => |array| {
+            while (Engine.State.load(.acquire) == .Running) {
+                Engine.GUI.glfwPollEvents();
+                try Engine.Async.updateSchedule();
+                if (Future.tryValue()) |value| {
+                    if (@TypeOf(value) == c_int) {
+                        if (value != 0) return error.UserInitFailed;
+                    } else {
+                        try value;
+                    }
+
+                    break;
+                }
+            }
             // check for single threaded
             var handles: [array.len]Engine.Async.Scheduler.Scheduler.Handle = undefined;
             inline for (User.update[0..array.len], 0..array.len) |update, i| {
@@ -92,11 +128,13 @@ pub fn main_impl(Init: std.process.Init) !void {
                     else => @panic("update field in User update struct must be a function!"),
                 };
             }
+
             while (Engine.State.load(.acquire) == .Running) {
+                Engine.GUI.glfwPollEvents();
                 try Engine.Async.updateSchedule();
             }
             for (handles) |handle| {
-                try handle.cancel();
+                handle.cancel();
             }
         },
         else => @panic("Wrong type of User update!"),

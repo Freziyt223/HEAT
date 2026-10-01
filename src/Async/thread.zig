@@ -45,6 +45,7 @@ pub fn Thread(comptime itemType: type, comptime Reserve: type) type {
                 if (self.queue.pop()) |call| {
                     call.function(call);
                     call.destroy(call);
+                    if (call.on_complete) |on_complete| on_complete(call.completion_context);
                 } else {
                     std.atomic.spinLoopHint();
                 }

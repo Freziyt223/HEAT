@@ -2,12 +2,11 @@
 //! To run examples run zig build inside examples folder
 const std = @import("std");
 pub const Config = @import("config.zig");
-/// Configuration of this build
+
 const ResolvedOptions = struct {
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     singlethreaded: bool,
-    /// False will remove some checks and strip some debug allocator features
     runtime_safety: bool,
     ztracy_enable: bool,
     c_bindings: bool,
@@ -20,6 +19,7 @@ const ResolvedOptions = struct {
     build_directx: bool,
     renderer: Config.renderer_enum,
 };
+
 var options: ?ResolvedOptions = null;
 
 fn resolveOptions(b: *std.Build) ResolvedOptions {
@@ -44,98 +44,187 @@ fn resolveOptions(b: *std.Build) ResolvedOptions {
 const ExecutableConfig = struct {
     name: []const u8,
     user_module: ?*std.Build.Module = null,
-
     target: ?std.Build.ResolvedTarget = null,
     optimize: ?std.builtin.OptimizeMode = null,
 };
+
 pub fn addExecutable(b: *std.Build, config: ExecutableConfig) ![]*std.Build.Step.Compile {
     Config.profile();
     if (options == null) options = resolveOptions(b);
     const opts = options.?;
+
+    const target = config.target orelse opts.target;
+    const optimize = config.optimize orelse opts.optimize;
+
+    // --- Build Options ---
     const options_step = b.addOptions();
     options_step.addOption(bool, "singlethreaded", opts.singlethreaded);
     options_step.addOption(bool, "runtime_safety", opts.runtime_safety);
     options_step.addOption(bool, "gui", opts.gui);
     options_step.addOption(bool, "has_user", if (config.user_module) |_| true else false);
     options_step.addOption(Config.renderer_enum, "renderer", opts.renderer);
-    // Arguments passed to this build are composed to a module
-    // which can be accessed later with just @import
     const BuildOptions = options_step.createModule();
 
-    // Dependencies
+    // ===============================
+    // --- Base Dependencies ---
+    // ===============================
+
     const ztracy = b.dependency("ztracy", .{
-        .target = opts.target,
-        .optimize = opts.optimize,
+        .target = target,
+        .optimize = optimize,
         .enable_ztracy = opts.ztracy_enable,
     });
     const ztracy_mod = ztracy.module("root");
-    const luajit = b.dependency("zig_luajit", .{
-        .target = opts.target,
-        .optimize = opts.optimize,
-    }).module("luajit");
-    const glfw_dep = if (opts.gui and opts.use_glfw) b.dependency("zglfw", .{
-        .target = opts.target,
-        .optimize = opts.optimize,
-        .import_vulkan = opts.build_vulkan,
-    }) else null;
-    const glfw = if (glfw_dep) |dep| dep.module("root") else null;
-    const vulkan_zig = if (opts.gui and opts.build_vulkan) b.dependency("vulkan_zig", .{
-        .registry = b.dependency("vulkan_headers", .{}).path("registry/vk.xml"),
-    }).module("vulkan-zig") else null;
-    const zgui_dep = if (opts.gui) b.dependency("zgui", .{
-        .target = opts.target,
-        .optimize = opts.optimize,
-        .shared = false,
-        .backend = .no_backend,
-    }) else null;
 
-    // Memory usage tracking
-    const TrackingAllocator = b.addModule(
-        "TrackingAllocator",
-        .{
-            .root_source_file = b.path("src/TrackingAllocator.zig"),
-            .target = config.target orelse opts.target,
-            .optimize = config.optimize orelse opts.optimize,
-        },
-    );
+    const luajit = b.dependency("zig_luajit", .{
+        .target = target,
+        .optimize = optimize,
+    }).module("luajit");
+
+    // ===========================
+    // --- Core Submodules ---
+    // ===========================
+
+    const TrackingAllocator = b.addModule("TrackingAllocator", .{
+        .root_source_file = b.path("src/TrackingAllocator.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
     TrackingAllocator.addImport("ztracy", ztracy_mod);
 
-    // Runtime configuration
     const Conf = b.addModule("Conf", .{
         .root_source_file = b.path("src/Conf.zig"),
-        .target = config.target orelse opts.target,
-        .optimize = config.optimize orelse opts.optimize,
+        .target = target,
+        .optimize = optimize,
     });
     if (config.user_module) |user_module| user_module.addImport("Conf", Conf);
     Conf.addImport("BuildOptions", BuildOptions);
 
-    // Input/Ouput system
-    const IO = b.addModule(
-        "IO",
-        .{
-            .root_source_file = b.path("src/IO/main.zig"),
-            .target = config.target orelse opts.target,
-            .optimize = config.optimize orelse opts.optimize,
-        },
-    );
+    const IO = b.addModule("IO", .{
+        .root_source_file = b.path("src/IO/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
     IO.addImport("TrackingAllocator", TrackingAllocator);
 
-    // Async(multithreadong)
-    const Async = b.addModule(
-        "Async",
-        .{
-            .root_source_file = b.path("src/Async/main.zig"),
-            .target = config.target orelse opts.target,
-            .optimize = config.optimize orelse opts.optimize,
-        },
-    );
+    const Async = b.addModule("Async", .{
+        .root_source_file = b.path("src/Async/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
     Async.addImport("Conf", Conf);
     Async.addImport("TrackingAllocator", TrackingAllocator);
     Async.addImport("IO", IO);
+    const GUI = blk: {
+        if (opts.gui) {
+            const impl = b.addModule("GUI", .{
+                .root_source_file = if (opts.gui) b.path("src/GUI/main.zig") else b.path("src/GUI/stub.zig"),
+                .target = target,
+                .optimize = optimize,
+                .imports = &.{
+                    .{ .name = "TrackingAllocator", .module = TrackingAllocator },
+                    .{ .name = "Conf", .module = Conf },
+                    .{ .name = "Async", .module = Async },
+                },
+            });
+            // Windowing (GLFW)
+            if (opts.use_glfw) {
+                const Interface = b.addModule("GUI_Interface", .{
+                    .root_source_file = b.path("src/GUI/interface.zig"),
+                    .target = target,
+                    .optimize = optimize,
+                    .imports = &.{
+                        .{ .name = "Async", .module = Async },
+                    },
+                });
+                const zglfw_dep = b.dependency("zglfw", .{
+                    .target = target,
+                    .optimize = optimize,
+                    .import_vulkan = opts.build_vulkan,
+                });
+                const zglfw = zglfw_dep.module("root");
+                Interface.addImport("zglfw", zglfw);
+                impl.addImport("zglfw", zglfw);
+                impl.addImport("Interface", Interface);
+
+                if (target.result.os.tag != .emscripten) {
+                    impl.linkLibrary(zglfw_dep.artifact("glfw"));
+                }
+
+                // UI Layer (zgui)
+                const zgui_dep = b.dependency("zgui", .{
+                    .target = target,
+                    .optimize = optimize,
+                    .shared = opts.zgui_shared,
+                    .backend = .glfw_vulkan,
+                });
+                const zgui = zgui_dep.module("root");
+                impl.addImport("zgui", zgui);
+                impl.linkLibrary(zgui_dep.artifact("imgui"));
+
+                // Renderer Backend (zbgfx or Vulkan)
+                if (opts.renderer == .bgfx or opts.renderer == .automatic) {
+                    const zbgfx_dep = b.dependency("zbgfx", .{
+                        .target = target,
+                        .optimize = optimize,
+                    });
+                    const bgfx = b.createModule(.{
+                        .root_source_file = b.path("src/GUI/bgfx/main.zig"),
+                        .target = target,
+                        .optimize = optimize,
+                        .imports = &.{
+                            .{ .name = "Async", .module = Async },
+                            .{ .name = "TrackingAllocator", .module = TrackingAllocator },
+                            .{ .name = "Interface", .module = Interface },
+                            .{ .name = "zglfw", .module = zglfw },
+                            .{ .name = "zgui", .module = zgui },
+                            .{ .name = "zbgfx", .module = zbgfx_dep.module("root") },
+                        },
+                    });
+                    bgfx.linkLibrary(zbgfx_dep.artifact("bgfx"));
+                    impl.addImport("bgfx", bgfx);
+                } else if (opts.build_vulkan and opts.renderer == .vulkan) {
+                    const vulkan_zig = b.dependency("vulkan_zig", .{
+                        .registry = b.dependency("vulkan_headers", .{}).path("registry/vk.xml"),
+                    }).module("vulkan-zig");
+                    const vulkan = b.createModule(.{
+                        .root_source_file = b.path("src/GUI/vulkan/main.zig"),
+                        .target = target,
+                        .optimize = optimize,
+                        .imports = &.{
+                            .{ .name = "TrackingAllocator", .module = TrackingAllocator },
+                            .{ .name = "Conf", .module = Conf },
+                            .{ .name = "IO", .module = IO },
+                            .{ .name = "Async", .module = Async },
+                            .{ .name = "vulkan", .module = vulkan_zig },
+                            .{ .name = "glfw", .module = zglfw },
+                            .{ .name = "Interface", .module = Interface },
+                            .{ .name = "zgui", .module = zgui },
+                        },
+                    });
+                    impl.addImport("vulkan", vulkan);
+                    zglfw.addImport("vulkan", vulkan_zig);
+                }
+            }
+            break :blk impl;
+        } else break :blk b.addModule("GUI", .{
+            .root_source_file = b.path("src/GUI/stub.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "Async", .module = Async },
+                .{ .name = "TrackingAllocator", .module = TrackingAllocator },
+            },
+        });
+    };
+
+    // ===========================
+    // --- C Bindings & Lua ---
+    // ===========================
 
     const C_API = if (opts.c_bindings) b.addModule("C_API", .{
-        .target = opts.target,
-        .optimize = opts.optimize,
+        .target = target,
+        .optimize = optimize,
         .link_libc = true,
         .root_source_file = b.path("bindings/C/main.zig"),
         .imports = &.{
@@ -145,59 +234,10 @@ pub fn addExecutable(b: *std.Build, config: ExecutableConfig) ![]*std.Build.Step
             .{ .name = "Conf", .module = Conf },
         },
     }) else null;
-    const Interface = if (opts.gui) b.addModule("GUI_interface", .{
-        .root_source_file = b.path("src/GUI/interface.zig"),
-        .target = opts.target,
-        .optimize = opts.optimize,
-        .imports = &.{
-            .{ .name = "Async", .module = Async },
-        },
-    }) else null;
-    const GUI = b.addModule("GUI", .{
-        .root_source_file = if (opts.gui) b.path("src/GUI/main.zig") else b.path("src/GUI/stub.zig"),
-        .target = opts.target,
-        .optimize = opts.optimize,
-        .imports = &.{
-            .{ .name = "TrackingAllocator", .module = TrackingAllocator },
-        },
-    });
-    if (Interface) |iface| GUI.addImport("Interface", iface);
-
-    const vulkan = if (opts.gui and opts.use_glfw and opts.build_vulkan and (opts.renderer == .vulkan or opts.renderer == .automatic)) blk: {
-        const mod = b.addModule("Vulkan_backend", .{
-            .root_source_file = b.path("src/GUI/vulkan/main.zig"),
-            .target = opts.target,
-            .optimize = opts.optimize,
-            .imports = &.{
-                .{ .name = "Interface", .module = Interface.? },
-                .{ .name = "TrackingAllocator", .module = TrackingAllocator },
-                .{ .name = "glfw", .module = glfw.? },
-                .{ .name = "vulkan", .module = vulkan_zig.? },
-                .{ .name = "zgui_backend", .module = b.createModule(.{
-                    .root_source_file = zgui_dep.?.path("src/backend_glfw_vulkan.zig"),
-                    .target = opts.target,
-                    .optimize = opts.optimize,
-                }) },
-                .{ .name = "Async", .module = Async },
-                .{ .name = "Conf", .module = Conf },
-            },
-        });
-        if (glfw_dep) |dep| {
-            if (opts.target.result.os.tag != .emscripten) mod.linkLibrary(dep.artifact("glfw"));
-        }
-        mod.linkLibrary(zgui_dep.?.artifact("imgui"));
-        const lib = b.addLibrary(.{
-            .name = "vulkan",
-            .linkage = .dynamic,
-            .root_module = mod,
-        });
-        break :blk lib;
-    } else null;
-    if (vulkan) |vk| GUI.addImport("vulkan", vk.root_module);
 
     const Lua = if (opts.use_lua) b.addModule("Lua", .{
-        .target = opts.target,
-        .optimize = opts.optimize,
+        .target = target,
+        .optimize = optimize,
         .link_libc = true,
         .root_source_file = b.path("bindings/Lua/main.zig"),
         .imports = &.{
@@ -208,11 +248,12 @@ pub fn addExecutable(b: *std.Build, config: ExecutableConfig) ![]*std.Build.Step
             .{ .name = "TrackingAllocator", .module = TrackingAllocator },
         },
     }) else null;
-    // Engine struct
+
+    // --- Core Engine ---
     const Engine = b.addModule("Engine", .{
         .root_source_file = b.path("src/root.zig"),
-        .target = config.target orelse opts.target,
-        .optimize = config.optimize orelse opts.optimize,
+        .target = target,
+        .optimize = optimize,
         .imports = &.{
             .{ .name = "IO", .module = IO },
             .{ .name = "Conf", .module = Conf },
@@ -222,16 +263,17 @@ pub fn addExecutable(b: *std.Build, config: ExecutableConfig) ![]*std.Build.Step
             .{ .name = "GUI", .module = GUI },
         },
     });
+
     if (config.user_module) |user_module| user_module.addImport("Engine", Engine);
     if (C_API) |_| Engine.addIncludePath(b.path("bindings/C"));
     if (Lua) |L| Engine.addImport("Lua", L);
 
-    // Entrypoint of a final executable
+    // --- Executable ---
     const Executable = b.addExecutable(.{
         .name = config.name,
         .root_module = b.createModule(.{
-            .target = config.target orelse opts.target,
-            .optimize = config.optimize orelse opts.optimize,
+            .target = target,
+            .optimize = optimize,
             .imports = &.{
                 .{ .name = "Conf", .module = Conf },
                 .{ .name = "Engine", .module = Engine },
@@ -241,21 +283,18 @@ pub fn addExecutable(b: *std.Build, config: ExecutableConfig) ![]*std.Build.Step
             .root_source_file = b.path("src/main.zig"),
         }),
     });
+
     if (config.user_module) |user_module| Executable.root_module.addImport("User", user_module);
     Executable.root_module.linkLibrary(ztracy.artifact("tracy"));
+
     if (C_API) |C| {
         Executable.root_module.addImport("C_API", C);
         Executable.root_module.addIncludePath(b.path("bindings/C"));
         if (config.user_module) |user_module| user_module.addIncludePath(b.path("bindings/C"));
     }
-    var i: usize = 1;
-    if (vulkan) |_| i += 1;
-    const slice = try b.allocator.alloc(*std.Build.Step.Compile, i);
-    i = 0;
-    slice[i] = Executable;
-    i += 1;
-    if (vulkan) |vk| slice[i] = vk;
 
+    const slice = try b.allocator.alloc(*std.Build.Step.Compile, 1);
+    slice[0] = Executable;
     return slice;
 }
 
@@ -266,11 +305,10 @@ pub fn addEditor(b: *std.Build) ![]*std.Build.Step.Compile {
         .target = opts.target,
         .optimize = opts.optimize,
     });
-    const binaries = try addExecutable(b, .{
+    return try addExecutable(b, .{
         .name = "HEAT",
         .user_module = main,
     });
-    return binaries;
 }
 
 pub fn build(b: *std.Build) !void {

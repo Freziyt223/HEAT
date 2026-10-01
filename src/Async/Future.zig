@@ -5,7 +5,7 @@ const Thread = Task.Thread;
 
 pub const FutureError = error{TypeIsVoid};
 pub fn Future(comptime T: type) type {
-    if (T == void) return FutureError.TypeIsVoid;
+    if (T == void) @compileError("Future type cannot be void!");
     return struct {
         const Self = @This();
         result: ?T = null,

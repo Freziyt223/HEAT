@@ -14,7 +14,7 @@ pub const Scheduler = struct {
     pub const SchedulerError = error{ NullAllocator, CallNotFound };
     pub const Handle = struct {
         id: usize,
-        pub fn cancel(handle: Handle) !void {
+        pub fn cancel(handle: Handle) void {
             acquire();
             defer release();
             for (Queue.items, 0..) |item, idx| {
@@ -24,7 +24,6 @@ pub const Scheduler = struct {
                     return;
                 }
             }
-            return SchedulerError.CallNotFound;
         }
     };
     pub const Call = struct {

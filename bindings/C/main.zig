@@ -146,7 +146,7 @@ pub export fn Async_call_reserved(reserve: *anyopaque, function: *const fn (?*an
             .args = @ptrCast(@alignCast(full_ctx)),
             .return_to = if (target_future) |address| @ptrCast(@alignCast(address)) else null,
         };
-        Async.Task.call_thread(@ptrCast(@alignCast(reserve)), item) catch |err| return @intFromError(err);
+        Async.Task.call_thread(@ptrCast(@alignCast(reserve)), item);
         return 0;
     }
     const returned = function(ctx);

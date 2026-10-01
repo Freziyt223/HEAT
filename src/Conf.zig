@@ -12,3 +12,17 @@ pub var QueueCapacity_EVEN: usize = 8;
 pub inline fn is_singlethreaded() bool {
     return BuildOptions.singlethreaded or NumberOfThreads == 0;
 }
+
+pub const GpuPreference = enum {
+    discrete,
+    integrated,
+    index,
+    name,
+};
+pub const DeviceSelection = union(GpuPreference) {
+    discrete: void,
+    integrated: void,
+    index: usize,
+    name: []const u8,
+};
+pub var selection: DeviceSelection = .discrete;

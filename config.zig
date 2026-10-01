@@ -19,7 +19,7 @@ pub const Dependencies = struct {
 pub var build_vulkan: bool = true;
 pub var build_opengl: bool = false;
 pub var build_directx: bool = false;
-pub const renderer_enum = enum { automatic, vulkan, opengl, directx };
+pub const renderer_enum = enum { automatic, vulkan, opengl, directx, bgfx, none };
 pub var renderer: renderer_enum = .vulkan;
 
 pub fn default_profile() void {}

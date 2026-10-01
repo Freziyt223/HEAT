@@ -28,8 +28,8 @@
             .hash = "N-V-__8AAGY0fgLehr5nql-j-Y4wCrKqEVNVmmdkjItBHbzV",
         },
         .vulkan_zig = .{
-            .url = "git+https://github.com/Snektron/vulkan-zig#master",
-            .hash = "vulkan-0.0.0-r7Ytx_6DAwDB1QJAbIew5IzR2PiiAtJENX5kdJHf449X",
+            .url = "git+https://github.com/Snektron/vulkan-zig#zig-0.16-compat",
+            .hash = "vulkan-0.0.0-r7Ytx7N9AwD7IZt5_XNHtkJ4G9qY0pCH-cpcOsbL8wzD",
         },
     },
 }

@@ -23,7 +23,12 @@ pub fn Queue(comptime ItemType: type) type {
         pub fn init(capacity_EVEN: usize) !Self {
             const capacity_1 = capacity_EVEN - 1;
             std.debug.assert(capacity_EVEN & capacity_1 == 0);
-            const Return = Self{ .capacity = capacity_EVEN, .mask = capacity_1, .buffer = try Allocator.allocator().alloc(Cell, capacity_EVEN), .semaphore = .{ .permits = capacity_1 } };
+            const Return = Self{
+                .capacity = capacity_EVEN,
+                .mask = capacity_1,
+                .buffer = try Allocator.allocator().alloc(Cell, capacity_EVEN),
+                .semaphore = .{ .permits = capacity_1 },
+            };
             for (0..capacity_EVEN) |i| {
                 Return.buffer[i].sequence.store(i, .unordered);
             }
@@ -32,8 +37,8 @@ pub fn Queue(comptime ItemType: type) type {
         pub fn deinit(self: *Self) void {
             Allocator.allocator().free(self.buffer);
         }
-        pub const PushError = error{Full};
-        pub fn push(self: *Self, item: ItemType) PushError!void {
+        // pub const PushError = error{Full};
+        pub fn push(self: *Self, item: ItemType) void {
             var enqueue = self.ENqueue.load(.monotonic);
 
             while (true) {
@@ -51,7 +56,7 @@ pub fn Queue(comptime ItemType: type) type {
                     self.semaphore.post(IO.Io);
                     return;
                 } else if (diff < 0) {
-                    return PushError.Full;
+                    return;
                 } else {
                     enqueue = self.ENqueue.load(.monotonic);
                 }

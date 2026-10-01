@@ -14,6 +14,10 @@ const examples = [_]Example{
         .name = "C",
         .build_fn = @import("C/build_example.zig").build,
     },
+    .{
+        .name = "basic-window",
+        .build_fn = @import("basic-window/build_example.zig").build,
+    },
 };
 
 pub fn build(b: *std.Build) !void {

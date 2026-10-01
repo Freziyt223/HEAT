@@ -12,6 +12,8 @@ pub const Call = struct {
     allocator: ?*TrackingAllocator = null,
     args: ?*anyopaque,
     return_to: ?*anyopaque = null,
+    on_complete: ?*const fn (?*anyopaque) void = null,
+    completion_context: ?*anyopaque = null,
 };
 pub const Thread = Thread_type.Thread(Call, Reserve);
 pub const JobQueue = Thread.Queue;
@@ -38,6 +40,7 @@ pub const Reserve = struct {
                                 if (args) |args_actual| {
                                     const allocator = Allocator.allocator();
                                     const stored = try allocator.create(args_type);
+                                    errdefer allocator.free(stored);
                                     stored.* = args_actual;
                                     break :args_blk stored;
                                 } else break :args_blk null;
@@ -45,6 +48,7 @@ pub const Reserve = struct {
                             else => {
                                 const allocator = Allocator.allocator();
                                 const stored = try allocator.create(args_type);
+                                errdefer allocator.free(stored);
                                 stored.* = args;
                                 break :args_blk stored;
                             },
@@ -62,7 +66,7 @@ pub const Reserve = struct {
         self.thread.reserved = false;
     }
 };
-pub fn call_thread(self: *Thread, item: Call) !void {
+pub fn call_thread(self: *Thread, item: Call) void {
     return self.queue.push(item);
 }
 const CallError = error{
@@ -73,67 +77,36 @@ pub fn wrap(comptime function: anytype, args_type: type, CallType: type) CallErr
     exec: *const fn (CallType) void,
     destroy: *const fn (CallType) void,
 } {
-    const function_type = @TypeOf(function);
-    switch (@typeInfo(function_type)) {
-        .@"fn" => {
-            // Using the wrapper to place a function declaration inside this wrap() function
-            const wrapper = struct {
-                pub fn exec(self: CallType) void {
-                    // 1. We use inline if (or a comptime block just for the type logic)
-                    // to decide *how* to initialize the tuple at runtime.
-                    const args_tuple = if (comptime args_type == void)
-                        .{}
-                    else
-                        @as(*args_type, @ptrCast(@alignCast(self.args orelse unreachable))).*;
-
-                    // 2. Call the function once
-                    const returned = @call(.auto, function, args_tuple);
-
-                    // 3. Handle the return value/future
-                    if (self.return_to) |self_return_to| {
-                        const return_to: *Future.Future(@TypeOf(returned)) = @ptrCast(@alignCast(self_return_to));
-                        return_to.set(returned);
-                    }
-                }
-                pub fn destroy(self: CallType) void {
-                    if (self.allocator) |allocator| {
-                        if (self.args) |args_stored| {
-                            const args = @as(*args_type, @ptrCast(@alignCast(args_stored)));
-                            allocator.allocator().destroy(args);
-                        }
-                    }
-                }
+    const wrapper = struct {
+        pub fn exec(self: CallType) void {
+            const args_tuple = if (comptime args_type == void)
+                .{}
+            else blk: {
+                const args_ptr = @as(*args_type, @ptrCast(@alignCast(self.args orelse unreachable)));
+                break :blk args_ptr.*;
             };
-            return .{ .exec = wrapper.exec, .destroy = wrapper.destroy };
-        },
-        .pointer => |p| {
-            switch (@typeInfo(p.child)) {
-                .@"fn" => {
-                    // Using the wrapper to place a function declaration inside this wrap() function
-                    const wrapper = struct {
-                        pub fn exec(self: CallType) void {
-                            const returned = @call(.auto, function, if (self.args) |args| @as(*args_type, @ptrCast(@alignCast(args))).* else .{});
-                            if (self.return_to) |self_return_to| {
-                                const return_to: *Future.Future(@TypeOf(returned)) = @ptrCast(@alignCast(self_return_to));
-                                return_to.set(returned);
-                            }
-                        }
-                        pub fn destroy(self: CallType) void {
-                            if (self.allocator) |allocator| {
-                                if (self.args) |args_stored| {
-                                    const args = @as(*args_type, @ptrCast(@alignCast(args_stored)));
-                                    allocator.allocator().destroy(args);
-                                }
-                            }
-                        }
-                    };
-                    return .{ .exec = wrapper.exec, .destroy = wrapper.destroy };
-                },
-                else => return error.WrongFunctionType,
+
+            const returned = @call(.auto, function, args_tuple);
+
+            if (comptime @TypeOf(returned) != void) {
+                if (self.return_to) |self_return_to| {
+                    const return_to: *Future.Future(@TypeOf(returned)) = @ptrCast(@alignCast(self_return_to));
+                    return_to.set(returned);
+                }
             }
-        },
-        else => return error.WrongFunctionType,
-    }
+        }
+
+        pub fn destroy(self: CallType) void {
+            if (self.allocator) |allocator| {
+                if (self.args) |args_stored| {
+                    const args = @as(*args_type, @ptrCast(@alignCast(args_stored)));
+                    allocator.allocator().destroy(args);
+                }
+            }
+        }
+    };
+
+    return .{ .exec = wrapper.exec, .destroy = wrapper.destroy };
 }
 
 pub fn null_destroy(_: Call) void {}

@@ -3,6 +3,8 @@ HEAT is a project of making a free modular game engine with core focus on modula
 ![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/Freziyt223/HEAT/main.yml)
 
 For now lua doesn't work:( needs big polishing
+Handle.cancel() doesn't work as intented, causing task memory to not be released and thus making memory leaks.
+Other than that there is synchronization problem with vkPipeline, as it is being used by vkCommandBuffer while destroying, but it is not critical.
 
 # Table of contents
 - [Something very important](#something-very-important)

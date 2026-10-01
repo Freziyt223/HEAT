@@ -15,7 +15,8 @@ pub const JobQueue = Task.JobQueue;
 
 /// Thread pool(dirrect calls)
 pub var Threads: []Task.Thread = undefined;
-pub var MainQueue: Thread.Queue = .init(4);
+pub var MainQueue: Thread.Queue = undefined;
+pub var main_thread: std.Thread.Id = undefined;
 pub var running: Atomic(bool) = .init(true);
 
 pub var next_thread: usize = 0;
@@ -25,6 +26,7 @@ pub const Config = struct { NumberOfThreads: usize, QueueCapacity_EVEN: usize };
 
 pub fn init(allocator: std.mem.Allocator, config: Config) !void {
     // Initializing allocators
+    main_thread = std.Thread.getCurrentId();
     Thread.Allocator = TrackingAllocator.init(allocator, "Thread");
     JobQueue.Allocator = TrackingAllocator.init(allocator, "JobQueue");
     Scheduler.Allocator = TrackingAllocator.init(JobQueue.Allocator.allocator(), "SchedulerAllocator");
@@ -36,13 +38,14 @@ pub fn init(allocator: std.mem.Allocator, config: Config) !void {
             try thread.spawn();
         }
     }
+    MainQueue = try .init(4);
 }
 pub fn deinit() void {
+    scheduler.deinit();
     running.store(false, .release);
     for (Threads) |*thread| {
         thread.queue.semaphore.post(IO.Io);
     }
-    scheduler.deinit();
     if (!Conf.is_singlethreaded()) {
         for (Threads) |*thread| {
             thread.deinit();
@@ -50,8 +53,12 @@ pub fn deinit() void {
 
         Thread.Allocator.allocator().free(Threads);
     }
+    MainQueue.deinit();
 }
 
+fn isMainThread() bool {
+    return std.Thread.getCurrentId() == main_thread;
+}
 const CallError = error{
     WrongID,
     WrongFunctionType,
@@ -73,6 +80,7 @@ pub fn call(comptime function: anytype, args: anytype, FutureType: type, return_
                             if (args) |args_actual| {
                                 const allocator = Allocator.allocator();
                                 const stored = try allocator.create(args_type);
+                                errdefer allocator.free(stored);
                                 stored.* = args_actual;
                                 break :args_blk stored;
                             } else break :args_blk null;
@@ -80,6 +88,7 @@ pub fn call(comptime function: anytype, args: anytype, FutureType: type, return_
                         else => {
                             const allocator = Allocator.allocator();
                             const stored = try allocator.create(args_type);
+                            errdefer allocator.free(stored);
                             stored.* = args;
                             break :args_blk stored;
                         },
@@ -94,43 +103,88 @@ pub fn call(comptime function: anytype, args: anytype, FutureType: type, return_
     const returned = @call(.auto, function, args);
     if (FutureType != void) if (return_to) |future| future.set(returned);
 }
-pub fn callMain(comptime function: anytype, args: anytype, FutureType: type, return_to: ?*FutureType) !void {
-    if (!Conf.is_singlethreaded()) {
-        // Just wanted to try using blocks in zig...
-        const item = item_blk: {
-            const Allocator = &JobQueue.Allocator;
-            const args_type = @TypeOf(args);
-            const wrapper = try Task.wrap(function, args_type, Task.Call);
-            break :item_blk Task.Call{
-                .function = wrapper.exec,
-                .destroy = wrapper.destroy,
-                .allocator = Allocator,
-                .args = args_blk: {
-                    switch (@typeInfo(args_type)) {
-                        .optional => {
-                            if (args) |args_actual| {
-                                const allocator = Allocator.allocator();
-                                const stored = try allocator.create(args_type);
-                                stored.* = args_actual;
-                                break :args_blk stored;
-                            } else break :args_blk null;
-                        },
-                        else => {
-                            const allocator = Allocator.allocator();
-                            const stored = try allocator.create(args_type);
-                            stored.* = args;
-                            break :args_blk stored;
-                        },
-                    }
-                },
-                .return_to = if (return_to) |address| @ptrCast(@alignCast(address)) else null,
-            };
-        };
-        try MainQueue.push(item);
+pub fn callMain(
+    comptime function: anytype,
+    args: anytype,
+    FutureType: type,
+    return_to: ?*FutureType,
+) !void {
+    // Якщо ми вже на main thread — виконати одразу.
+    if (Conf.is_singlethreaded() or isMainThread()) {
+        const returned = @call(.auto, function, args);
+
+        if (FutureType != void) {
+            if (return_to) |future| {
+                future.set(returned);
+            }
+        }
+
         return;
     }
-    const returned = @call(.auto, function, args);
-    if (FutureType != void) if (return_to) |future| future.set(returned);
+
+    const Allocator = &JobQueue.Allocator;
+    const args_type = @TypeOf(args);
+
+    const wrapper = try Task.wrap(
+        function,
+        args_type,
+        Task.Call,
+    );
+
+    const item = Task.Call{
+        .function = wrapper.exec,
+        .destroy = wrapper.destroy,
+        .allocator = Allocator,
+        .args = args_blk: {
+            switch (@typeInfo(args_type)) {
+                .optional => {
+                    if (args) |args_actual| {
+                        const allocator = Allocator.allocator();
+                        const stored = try allocator.create(args_type);
+                        stored.* = args_actual;
+                        break :args_blk stored;
+                    } else {
+                        break :args_blk null;
+                    }
+                },
+
+                else => {
+                    const allocator = Allocator.allocator();
+                    const stored = try allocator.create(args_type);
+                    stored.* = args;
+
+                    break :args_blk stored;
+                },
+            }
+        },
+        .return_to = if (return_to) |address|
+            @ptrCast(@alignCast(address))
+        else
+            null,
+    };
+
+    MainQueue.push(item);
+}
+pub fn callMainSync(comptime function: anytype, args: anytype) !ReturnType(function) {
+    const ReturnT = ReturnType(function);
+
+    if (Conf.is_singlethreaded()) {
+        return @call(.auto, function, args);
+    }
+
+    if (ReturnT == void) {
+        try callMain(function, args, void, null);
+        return;
+    } else {
+        var fut: Future(ReturnT) = .{};
+        try callMain(function, args, Future(ReturnT), &fut);
+        return fut.wait();
+    }
+}
+
+fn ReturnType(comptime func: anytype) type {
+    const info = @typeInfo(@TypeOf(func));
+    return info.@"fn".return_type.?;
 }
 
 pub fn reserve(n: u16, lock: bool) !Task.Reserve {
@@ -138,7 +192,7 @@ pub fn reserve(n: u16, lock: bool) !Task.Reserve {
     if (n > Threads.len) return Task.ReserveError.OutOfBounds;
     const thread = &Threads[n];
     if (lock) thread.reserved = true;
-    return @ptrCast(thread);
+    return .{ .thread = thread };
 }
 pub fn call_thread_select(item: Task.Call) !usize {
     const capacity = Threads.len;
@@ -154,16 +208,18 @@ pub fn call_thread_select(item: Task.Call) !usize {
     }
     next_thread = i +% 1;
 
-    try Task.call_thread(thread, item);
+    Task.call_thread(thread, item);
     return i;
 }
 
 pub fn scheduleRepeated(comptime function: anytype, args: anytype, rate: ?std.Io.Duration) !scheduler.Handle {
     const Allocator = &Scheduler.Allocator;
+    const allocator = Allocator.allocator();
     const args_type = @TypeOf(args);
     const wrapper = try Task.wrap(function, args_type, Task.Call);
     const self_wrapper = try Task.wrap(function, args_type, scheduler.Call);
-    const args_stored = try Allocator.allocator().create(args_type);
+    const args_stored = try allocator.create(args_type);
+    errdefer allocator.destroy(args_stored);
     args_stored.* = args;
 
     const item = scheduler.Call{
@@ -181,10 +237,12 @@ pub fn scheduleRepeated(comptime function: anytype, args: anytype, rate: ?std.Io
 
 pub fn scheduleOnce(comptime function: anytype, args: anytype, at: std.Io.Timestamp, FutureType: type, return_to: ?*FutureType) !scheduler.Handle {
     const Allocator = &Scheduler.Allocator;
+    const allocator = Allocator.allocator();
     const args_type = @TypeOf(args);
     const wrapper = try Task.wrap(function, args_type, Task.Call);
     const self_wrapper = try Task.wrap(function, args_type, scheduler.Call);
     const args_stored = try Allocator.allocator().create(args_type);
+    errdefer allocator.destroy(args_stored);
     args_stored.* = args;
 
     const item = scheduler.Call{
@@ -225,6 +283,7 @@ pub fn updateSchedule() !void {
         }
         var call_item = Task.Call{
             .function = item.function,
+            .allocator = item.allocator,
             .destroy = if (item.rate != null) &Task.null_destroy else item.destroy,
             .args = item.args,
             .return_to = item.return_to,
@@ -242,7 +301,7 @@ pub fn updateSchedule() !void {
             }
             next_thread = i +% 1;
             if (item.setup) |func| func(&call_item, i);
-            try Task.call_thread(thread, call_item);
+            Task.call_thread(thread, call_item);
         } else {
             call_item.function(call_item);
             if (item.at == null) item.self_destroy(item);
@@ -250,7 +309,7 @@ pub fn updateSchedule() !void {
     }
     while (MainQueue.pop()) |c| {
         c.function(c);
-        c.destroy();
+        c.destroy(c);
     }
 }
 
