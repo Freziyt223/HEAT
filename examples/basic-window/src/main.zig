@@ -124,22 +124,9 @@ const WindowContext = struct {
         const renderer = self.renderer;
         const window = self.window;
 
-        // Не дозволяємо нові update.
         self.closing.store(true, .release);
 
         if (renderer) |r| {
-            if (self.graphicsPipeline) |pipeline| {
-                r.destroyGraphicsPipeline(pipeline);
-                self.graphicsPipeline = null;
-            }
-
-            for (&self.shaders) |*shader| {
-                if (shader.*) |shader_handle| {
-                    r.destroyShaderModule(shader_handle);
-                    shader.* = null;
-                }
-            }
-
             r.deinit();
         }
 
@@ -224,10 +211,6 @@ const ThreadContext = struct {
 
         self.initialized.store(true, .release);
     }
-
-    /// Лише просимо task закритися.
-    ///
-    /// Тут НЕ можна destroy(self).
     pub fn requestClose(self: *ThreadContext) void {
         if (self.destroyed.load(.acquire)) {
             return;
@@ -236,13 +219,11 @@ const ThreadContext = struct {
         self.close_requested.store(true, .release);
         self.windowContext.ctx.requestClose();
     }
-
-    /// Викликається тільки тоді, коли scheduler більше
-    /// не може запустити цей ThreadContext.
     pub fn deinit(self: *ThreadContext) void {
         if (self.destroyed.swap(true, .acq_rel)) {
             return;
         }
+        self.handle.cancel();
 
         const allocator = Allocator.allocator();
 
@@ -276,9 +257,6 @@ const ThreadContext = struct {
         if (ctx.is_destroyed.load(.acquire)) {
             return;
         }
-
-        // Якщо попередній update ще виконується,
-        // цей tick просто пропускаємо.
         if (ctx.update_running.swap(true, .acq_rel)) {
             return;
         }
@@ -325,8 +303,6 @@ const ThreadContext = struct {
         const window = ctx.window orelse return;
 
         if (window.shouldClose()) {
-            // ВАЖЛИВО:
-            // тут ми більше не робимо self.deinit().
             self.requestClose();
             return;
         }
@@ -340,13 +316,7 @@ const ThreadContext = struct {
         if (!ctx.is_graphics_pipeline_available.load(.acquire)) {
             return;
         }
-
         const pipeline = ctx.graphicsPipeline orelse return;
-
-        // =========================
-        // RENDER
-        // =========================
-
         var frame = try renderer.beginFrame();
 
         try frame.bindPipeline(pipeline);
@@ -392,10 +362,6 @@ pub fn init(Init: Engine.Init) !void {
 }
 
 pub fn deinit() void {
-    // Тут ми НЕ повинні просто знищувати ThreadContext,
-    // поки scheduler ще може викликати його.
-    //
-    // Спочатку просимо всі task закритися.
     var node = Threads.first;
 
     while (node) |current| {
@@ -406,8 +372,6 @@ pub fn deinit() void {
 
         node = current.next;
     }
-
-    // Далі cancel repeated tasks.
     node = Threads.first;
 
     while (node) |current| {
@@ -418,9 +382,6 @@ pub fn deinit() void {
 
         node = current.next;
     }
-
-    // У цьому місці фактичне знищення ThreadAlloc
-    // залежить від гарантій твого Scheduler.cancel().
 }
 
 pub const update = struct {
@@ -436,20 +397,13 @@ pub const update = struct {
             const ctx = &full.ctx;
 
             if (ctx.close_requested.load(.acquire)) {
-                // Якщо update_fn ще працює — чекаємо наступний tick.
                 if (ctx.windowContext.ctx.update_running.load(.acquire)) {
                     node = current.next;
                     continue;
                 }
 
-                // Повторно cancel не завадить, якщо cancel idempotent.
                 ctx.handle.cancel();
-
-                // Тут уже немає активного update_fn.
                 ctx.deinit();
-
-                // Після deinit node більше не валідний,
-                // тому починаємо з нового first.
                 node = Threads.first;
                 continue;
             }
