@@ -133,7 +133,7 @@ pub fn main_impl(Init: std.process.Init) !void {
                 Engine.GUI.glfwPollEvents();
                 try Engine.Async.updateSchedule();
             }
-            for (handles) |handle| {
+            for (handles) |*handle| {
                 handle.cancel();
             }
         },

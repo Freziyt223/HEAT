@@ -108,3 +108,5 @@ All of the examples are located in **"examples"** folder, to build them all run 
 If you want to build a singular example just run `zig build <name of example>`.
 You can also use run step like this: `zig build run-<name of example>`, which will build and execute selected example.
 
+# AI usage
+I am using AI in this project, no doubt it saved me some time spotting small bugs i haven't spotted when writing code, suggesting some algorithms like Vyukov's MCMP queue and making refactors. It's a great tool when it's not the only tool. I will be using it because it really helps with learning as this project is very much new for me. 
