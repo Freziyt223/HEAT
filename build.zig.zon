@@ -21,11 +21,11 @@
         },
         .zgui = .{
             .url = "git+https://github.com/zig-gamedev/zgui#main",
-            .hash = "zgui-0.6.0-dev--L6sZCtHbgC6H4Y4LaZUaRYqouHWdeOpHmLhm4OHYiKz",
+            .hash = "zgui-0.6.0-dev--L6sZMdHbgDGyf0mWBzn0LjGig6LuanLqohxml6sZiPG",
         },
         .vulkan_headers = .{
             .url = "git+https://github.com/KhronosGroup/Vulkan-Headers#main",
-            .hash = "N-V-__8AAGY0fgLehr5nql-j-Y4wCrKqEVNVmmdkjItBHbzV",
+            .hash = "N-V-__8AALu5iAL64sSFBjPrvXzTQ0ZMxT00hE0_7tezz3z4",
         },
         .vulkan_zig = .{
             .url = "git+https://github.com/Snektron/vulkan-zig#zig-0.16-compat",
