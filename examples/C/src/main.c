@@ -2,7 +2,11 @@
 #include <IO.h>
 #include <stdlib.h>
 // this will expose those functions to the engine
-#define Engine __declspec(dllexport)
+#if defined(_WIN32) || defined(_MSC_VER)
+    #define Engine __declspec(dllexport)
+#else
+    #define Engine __attribute__((visibility("default")))
+#endif
 
 void *future = NULL;
 void *wrapper(void *ctx) {
