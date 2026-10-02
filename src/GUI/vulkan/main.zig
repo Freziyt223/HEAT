@@ -37,7 +37,6 @@ pub fn init(allocator: std.mem.Allocator) anyerror!void {
     try try Async.callMainSync(internal_init, .{allocator});
 }
 fn internal_init(allocator: std.mem.Allocator) !void {
-    std.debug.print("Hi!", .{});
     Allocator = TrackingAllocator.init(allocator, "VulkanAllocator");
     try glfw.init();
     if (!glfw.isVulkanSupported()) {
@@ -47,16 +46,10 @@ fn internal_init(allocator: std.mem.Allocator) !void {
     glfw.windowHint(.client_api, .no_api);
     glfw.windowHint(.visible, true);
 
-    // Ініціалізація глобального контексту Vulkan (Instance, Debug, etc.)
     global_ctx = try GraphicsContext.GraphicsContex.init(Allocator.allocator());
 }
 pub fn deinit() void {
-    std.debug.print("Vulkan deinit START\n", .{});
-
     global_ctx.deinit();
-
-    std.debug.print("Vulkan deinit END\n", .{});
-
     glfw.terminate();
 }
 

@@ -66,7 +66,7 @@ pub fn main_impl(Init: std.process.Init) !void {
                     break;
                 }
             }
-            const handle = try Engine.Async.scheduleRepeated(User.update, .{}, null);
+            var handle = try Engine.Async.scheduleRepeated(User.update, .{}, null);
             while (Engine.State.load(.acquire) == .Running) {
                 Engine.GUI.glfwPollEvents();
                 try Engine.Async.updateSchedule();
@@ -91,7 +91,7 @@ pub fn main_impl(Init: std.process.Init) !void {
                                 break;
                             }
                         }
-                        const handle = try Engine.Async.scheduleRepeated(User.update.update, .{}, User.update.tick_rate);
+                        var handle = try Engine.Async.scheduleRepeated(User.update.update, .{}, User.update.tick_rate);
                         while (Engine.State.load(.acquire) == .Running) {
                             Engine.GUI.glfwPollEvents();
                             try Engine.Async.updateSchedule();

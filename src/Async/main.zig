@@ -231,6 +231,7 @@ pub fn scheduleRepeated(comptime function: anytype, args: anytype, rate: ?std.Io
         .rate = rate,
         .at = if (rate) |rt| std.Io.Timestamp.now(IO.Io, .awake).addDuration(rt) else null,
         .id = scheduler.nextId(),
+        .is_repeated = true,
     };
     return scheduler.push(item);
 }
@@ -254,40 +255,50 @@ pub fn scheduleOnce(comptime function: anytype, args: anytype, at: std.Io.Timest
         .at = at,
         .return_to = if (return_to) |address| @ptrCast(@alignCast(address)) else null,
         .id = scheduler.nextId(),
+        .is_repeated = false,
     };
     return scheduler.push(item);
 }
 
-pub fn cancelSchedule(handle: scheduler.Handle) !void {
-    return Scheduler.Scheduler.Handle.cancel(handle);
+pub fn cancelSchedule(handle: scheduler.Handle) void {
+    handle.cancel();
 }
 
 pub fn updateSchedule() !void {
-    while (true) {
-        const now = std.Io.Timestamp.now(IO.Io, .awake);
+    const now = std.Io.Timestamp.now(IO.Io, .awake);
+
+    scheduler.updateOrder();
+    scheduler.current_tick +%= 1;
+    const tick = scheduler.current_tick;
+
+    const max_checks = scheduler.count();
+    var checks: usize = 0;
+    while (checks < max_checks) : (checks += 1) {
         const maybe_item = scheduler.peek();
         if (maybe_item == null) break;
 
         const item = maybe_item.?;
+        if (item.last_tick == tick) break;
+
         if (item.at) |at| {
             if (now.nanoseconds < at.nanoseconds) break;
         }
 
-        _ = scheduler.pop();
-
-        if (item.rate) |r| {
-            var new_item = item;
-            new_item.at = now.addDuration(r);
-            new_item.id = scheduler.nextId();
-            _ = try scheduler.push(new_item);
+        if (item.is_repeated) {
+            const next_at = if (item.rate) |r| now.addDuration(r) else null;
+            scheduler.rescheduleTop(next_at, tick);
+        } else {
+            _ = scheduler.pop();
         }
-        var call_item = Task.Call{
+
+        var task_call = Task.Call{
             .function = item.function,
+            .destroy = if (item.is_repeated) Task.null_destroy else item.destroy,
             .allocator = item.allocator,
-            .destroy = if (item.rate != null) &Task.null_destroy else item.destroy,
             .args = item.args,
             .return_to = item.return_to,
         };
+
         if (!Conf.is_singlethreaded()) {
             const capacity = Threads.len;
             var iterations = capacity;
@@ -300,11 +311,13 @@ pub fn updateSchedule() !void {
                 thread = &Threads[i];
             }
             next_thread = i +% 1;
-            if (item.setup) |func| func(&call_item, i);
-            Task.call_thread(thread, call_item);
+            if (item.setup) |func| func(&task_call, i);
+            Task.call_thread(thread, task_call);
         } else {
-            call_item.function(call_item);
-            if (item.at == null) item.self_destroy(item);
+            task_call.function(task_call);
+            if (!item.is_repeated) {
+                item.self_destroy(item);
+            }
         }
     }
     while (MainQueue.pop()) |c| {

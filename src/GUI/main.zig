@@ -44,11 +44,7 @@ pub fn renderer(implementation: renderer_enum) !?Interface {
     switch (implementation) {
         .vulkan => {
             const interface = vulkan.getInterface();
-
-            // Спочатку ініціалізуємо backend.
             try interface.init(Allocator.allocator());
-
-            // І лише після успішного init реєструємо його.
             _ = try registerRenderer(interface);
 
             return interface;
@@ -78,11 +74,7 @@ pub fn deinit() void {
     while (RendererRegistryList.popFirst()) |item| {
         const registry: *RendererRegistry =
             @fieldParentPtr("node", item);
-
-        // Спочатку backend звільняє свої ресурси.
         registry.renderer.deinit();
-
-        // Потім звільняємо сам registry.
         allocator.destroy(registry);
     }
 }

@@ -2,10 +2,6 @@ HEAT is a project of making a free modular game engine with core focus on modula
 
 ![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/Freziyt223/HEAT/main.yml)
 
-For now lua doesn't work:( needs big polishing
-Handle.cancel() doesn't work as intented, causing task memory to not be released and thus making memory leaks.
-Other than that there is synchronization problem with vkPipeline, as it is being used by vkCommandBuffer while destroying, but it is not critical.
-
 # Table of contents
 - [Something very important](#something-very-important)
 - [Features](#features)
@@ -17,7 +13,11 @@ Other than that there is synchronization problem with vkPipeline, as it is being
 std.Build.StandartOptimizeOptions(.{}); Doesn't pass optimize correctly to the dependencies! Use b.option(bool, "optimize", ...) or set it manually.
 
 ## Features
-I'll write this later
+Has Async library which provides repeated scheduling, async execution with waiting,
+Windowing and rendering wrapper which uses glfw and vulkan, that now can render basic shaders
+
+But...
+Lua isn't implemented and C api doesn't have any rendering yet.
 
 ## Usage
 Some specifications:
@@ -64,7 +64,7 @@ const Self = @This();
 const Engine = @import("Engine");
 const Conf = @import("Conf");
 
-pub fn init(args: std.process.Args) !void {
+pub fn init(Init: Engine.Init) !void {
     _ = args;
     try Engine.IO.print("Hello, {s}\n", .{"world!"});
 }
@@ -75,6 +75,7 @@ pub const update = struct {
     }
     // 60 ticks per second
     pub const tick_rate: ?std.Io.Duration = .fromMicroseconds(16667);
+    // you can enter many update functions like this
 };
 
 pub fn deinit() void {}

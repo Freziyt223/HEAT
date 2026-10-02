@@ -227,7 +227,6 @@ pub const DeviceInfo = struct {
 };
 
 pub const Window = opaque {
-    /// Допоміжна функція для отримання кастованого вказівника із чітко визначеним типом
     inline fn toGlfwWindow(self: *Window) *zglfw.Window {
         return @as(*zglfw.Window, @ptrCast(self));
     }
@@ -236,7 +235,6 @@ pub const Window = opaque {
         return implementation.initWindow(implementation, self, queue_index);
     }
 
-    // GLFW methods wrapped with Async.callMainSync and catch error handling
     pub fn shouldClose(self: *Window) bool {
         return Async.callMainSync(zglfw.windowShouldClose, .{self.toGlfwWindow()}) catch |err| {
             std.debug.print("Got an error: {} when checking shouldClose!\n", .{err});

@@ -468,16 +468,6 @@ pub const GraphicsContex = struct {
 
         const present_family =
             selected.queueFamilyIndices.present_family;
-
-        // --------------------------------------------------------
-        // IMPORTANT:
-        //
-        // We have two WindowContexts running concurrently.
-        //
-        // Therefore we request TWO queues from every queue family
-        // that we are going to use.
-        // --------------------------------------------------------
-
         const queue_family_properties_count: u32 =
             blk: {
                 var count: u32 = 0;
@@ -513,23 +503,6 @@ pub const GraphicsContex = struct {
         const present_queue_count =
             queue_families[present_family].queue_count;
 
-        std.debug.print(
-            "Graphics family: {}, queues: {}\n",
-            .{
-                graphics_family,
-                graphics_queue_count,
-            },
-        );
-
-        std.debug.print(
-            "Present family: {}, queues: {}\n",
-            .{
-                present_family,
-                present_queue_count,
-            },
-        );
-
-        // We currently have two WindowContexts.
         if (graphics_queue_count < 2) {
             return error.NotEnoughGraphicsQueues;
         }
@@ -665,15 +638,6 @@ pub const GraphicsContex = struct {
                 device,
                 vkd,
             );
-
-        // --------------------------------------------------------
-        // IMPORTANT:
-        //
-        // Do NOT obtain queues here anymore.
-        //
-        // Each WindowContext obtains its own queue based on
-        // its queue_index.
-        // --------------------------------------------------------
 
         return selected;
     }
@@ -975,10 +939,6 @@ pub const WindowContext = struct {
             1,
     };
 
-    // ============================================================
-    // Init
-    // ============================================================
-
     pub fn init(
         allocator: std.mem.Allocator,
         global: *GraphicsContex,
@@ -1017,10 +977,6 @@ pub const WindowContext = struct {
             global,
         );
 
-        // --------------------------------------------------------
-        // Get THIS WINDOW's queues.
-        // --------------------------------------------------------
-
         self.graphics_queue =
             self.device.device.getDeviceQueue(
                 self.device
@@ -1036,11 +992,6 @@ pub const WindowContext = struct {
                     .present_family,
                 queue_index,
             );
-
-        std.debug.print(
-            "Window queue index: {}\n",
-            .{queue_index},
-        );
 
         try self.createSwapchain(global);
 
@@ -1058,11 +1009,6 @@ pub const WindowContext = struct {
 
         return self;
     }
-
-    // ============================================================
-    // Deinit
-    // ============================================================
-
     pub fn deinit(
         self: *WindowContext,
         global: *GraphicsContex,
@@ -1088,7 +1034,6 @@ pub const WindowContext = struct {
             }
         }
 
-        // Увесь GPU workload цього VkDevice має завершитися.
         self.device.device.deviceWaitIdle() catch |err| {
             std.debug.print(
                 "deviceWaitIdle failed during WindowContext.deinit: {}\n",
@@ -1096,9 +1041,8 @@ pub const WindowContext = struct {
             );
             return;
         };
-
-        // Тепер Vulkan objects можна знищувати.
-
+        self.destroyCommandPool();
+        self.destroySyncObjects();
         for (self.graphics_pipelines.items) |item| {
             if (item.handle != .null_handle) {
                 self.device.device.destroyPipeline(item.handle, null);
@@ -1123,9 +1067,6 @@ pub const WindowContext = struct {
         self.destroyImageViews();
         self.destroySwapchain();
         self.destroySurface(global);
-
-        self.destroyCommandPool();
-        self.destroySyncObjects();
 
         self.allocator.destroy(self);
     }
@@ -1886,7 +1827,6 @@ pub const WindowContext = struct {
 
                 .line_width = 1.0,
 
-                // Для першого тесту повністю вимикаємо culling.
                 .cull_mode = .{},
                 .front_face = .counter_clockwise,
 
@@ -1916,12 +1856,6 @@ pub const WindowContext = struct {
                 .alpha_to_coverage_enable = .false,
                 .alpha_to_one_enable = .false,
             };
-
-        // ------------------------------------------------------------
-        // Depth / stencil
-        //
-        // Для звичайного трикутника depth нам взагалі не потрібен.
-        // ------------------------------------------------------------
 
         const depth_stencil =
             vulkan.PipelineDepthStencilStateCreateInfo{
@@ -1968,7 +1902,6 @@ pub const WindowContext = struct {
 
         const blend_attachment =
             vulkan.PipelineColorBlendAttachmentState{
-                // Для тестового трикутника blending вимикаємо.
                 .blend_enable = .false,
 
                 .src_color_blend_factor = .one,
@@ -2024,13 +1957,6 @@ pub const WindowContext = struct {
 
                 .p_dynamic_states = &dynamic_states,
             };
-
-        // ------------------------------------------------------------
-        // Pipeline layout
-        //
-        // Наші shaders поки не використовують descriptors,
-        // push constants тощо.
-        // ------------------------------------------------------------
 
         const layout =
             try self.device.device.createPipelineLayout(
@@ -2579,9 +2505,6 @@ pub const WindowContext = struct {
                     render_finished_semaphore,
                 },
             };
-
-        // IMPORTANT:
-        // Use this WindowContext's graphics queue.
         try self.device.device.queueSubmit(self.graphics_queue, &.{SubmitInfo}, self.in_flight_fence);
 
         const PresentInfo =
@@ -2604,9 +2527,6 @@ pub const WindowContext = struct {
                     self.current_image,
                 },
             };
-
-        // IMPORTANT:
-        // Use this WindowContext's present queue.
         _ = try self.device.device.queuePresentKHR(
             self.present_queue,
             &PresentInfo,
