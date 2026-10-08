@@ -2,12 +2,12 @@ const std = @import("std");
 const vulkan = @import("vulkan");
 const glfw = @import("glfw");
 const zgui = @import("zgui");
-const zgui_backend = @import("zgui_backend");
 const TrackingAllocator = @import("TrackingAllocator");
 const Interface = @import("Interface");
 const Async = @import("Async");
-const GraphicsContext = @import("self.zig");
-var global_ctx: GraphicsContext.GraphicsContex = undefined;
+const WindowContext = @import("window.zig");
+const GraphicsContext = @import("global.zig");
+var global_ctx: GraphicsContext = undefined;
 pub var Allocator: TrackingAllocator = undefined;
 
 const interface = Interface{
@@ -24,9 +24,15 @@ const interface = Interface{
     .endFrame = @ptrCast(&endFrame),
     .present = @ptrCast(&present),
     .createShaderModule = @ptrCast(&createShaderModule),
-    .destroyShaderModule = @ptrCast(&destroyShaderModule),
+    .destroyShaderModule = &destroyShaderModule,
     .createGraphicsPipeline = @ptrCast(&createGraphicsPipeline),
-    .destroyGraphicsPipeline = @ptrCast(&destroyGraphicsPipeline),
+    .destroyGraphicsPipeline = &destroyGraphicsPipeline,
+    .createVertexBuffer = @ptrCast(&createVertexBuffer),
+    .destroyVertexBuffer = &destroyVertexBuffer,
+    .bindVertexBuffer = @ptrCast(&bindVertexBuffer),
+    .createIndexBuffer = @ptrCast(&createIndexBuffer),
+    .destroyIndexBuffer = &destroyIndexBuffer,
+    .bindIndexBuffer = @ptrCast(&bindIndexBuffer),
 };
 
 pub fn getInterface() Interface {
@@ -46,7 +52,7 @@ fn internal_init(allocator: std.mem.Allocator) !void {
     glfw.windowHint(.client_api, .no_api);
     glfw.windowHint(.visible, true);
 
-    global_ctx = try GraphicsContext.GraphicsContex.init(Allocator.allocator());
+    global_ctx = try GraphicsContext.init(Allocator.allocator());
 }
 pub fn deinit() void {
     global_ctx.deinit();
@@ -57,7 +63,7 @@ pub fn initWindow(renderer: Interface, window: *Interface.Window, queue_index: u
     glfw.windowHint(.client_api, .no_api);
     glfw.windowHint(.visible, true);
     const window_ctx = try try Async.callMainSync(
-        GraphicsContext.WindowContext.init,
+        WindowContext.init,
         .{
             Allocator.allocator(),
             &global_ctx,
@@ -74,7 +80,7 @@ pub fn initWindow(renderer: Interface, window: *Interface.Window, queue_index: u
 }
 
 pub fn deinitWindow(self: Interface.Renderer) void {
-    const window_ctx: *GraphicsContext.WindowContext = @ptrCast(@alignCast(self.ctx));
+    const window_ctx: *WindowContext = @ptrCast(@alignCast(self.ctx));
     window_ctx.deinit(&global_ctx);
 }
 
@@ -90,34 +96,60 @@ pub fn getPhysicalDevice() Interface.DeviceInfo {
     return global_ctx.getPhysicalDevice() catch unreachable;
 }
 
-fn createShaderModule(ctx: *anyopaque, spirv: []const u8) !Interface.Renderer.ShaderModule {
-    const window_ctx: *GraphicsContext.WindowContext = @ptrCast(@alignCast(ctx));
+pub fn createShaderModule(ctx: *anyopaque, spirv: []const u8) !Interface.Renderer.ShaderModule {
+    const window_ctx: *WindowContext = @ptrCast(@alignCast(ctx));
     return window_ctx.createShaderModule(spirv);
 }
-fn destroyShaderModule(ctx: *anyopaque, shader: Interface.Renderer.ShaderModule) void {
-    const window_ctx: *GraphicsContext.WindowContext = @ptrCast(@alignCast(ctx));
+pub fn destroyShaderModule(ctx: *anyopaque, shader: Interface.Renderer.ShaderModule) void {
+    const window_ctx: *WindowContext = @ptrCast(@alignCast(ctx));
     window_ctx.destroyShaderModule(shader);
 }
-fn createGraphicsPipeline(ctx: *anyopaque, info: Interface.Renderer.GraphicsPipelineCreateInfo) !Interface.Renderer.GraphicsPipeline {
-    const window_ctx: *GraphicsContext.WindowContext = @ptrCast(@alignCast(ctx));
+pub fn createGraphicsPipeline(ctx: *anyopaque, info: Interface.Renderer.GraphicsPipelineCreateInfo) !Interface.Renderer.GraphicsPipeline {
+    const window_ctx: *WindowContext = @ptrCast(@alignCast(ctx));
     return window_ctx.createGraphicsPipeline(info);
 }
-fn destroyGraphicsPipeline(ctx: *anyopaque, pipeline: Interface.Renderer.GraphicsPipeline) void {
-    const window_ctx: *GraphicsContext.WindowContext = @ptrCast(@alignCast(ctx));
+pub fn destroyGraphicsPipeline(ctx: *anyopaque, pipeline: Interface.Renderer.GraphicsPipeline) void {
+    const window_ctx: *WindowContext = @ptrCast(@alignCast(ctx));
     window_ctx.destroyGraphicsPipeline(pipeline);
 }
+
+pub fn createVertexBuffer(ctx: *anyopaque, verticies: []const u8) !Interface.Renderer.VertexBuffer {
+    const window_ctx: *WindowContext = @ptrCast(@alignCast(ctx));
+    return window_ctx.createVertexBuffer(&global_ctx, verticies);
+}
+pub fn destroyVertexBuffer(ctx: *anyopaque, buffer: Interface.Renderer.VertexBuffer) void {
+    const window_ctx: *WindowContext = @ptrCast(@alignCast(ctx));
+    window_ctx.destroyVertexBuffer(buffer);
+}
+pub fn bindVertexBuffer(ctx: *anyopaque, buffer: Interface.Renderer.VertexBuffer) !void {
+    const window_ctx: *WindowContext = @ptrCast(@alignCast(ctx));
+    return window_ctx.bindVertexBuffer(buffer);
+}
+
+pub fn createIndexBuffer(ctx: *anyopaque, indicies: []const u8) !Interface.Renderer.IndexBuffer {
+    const window_ctx: *WindowContext = @ptrCast(@alignCast(ctx));
+    return window_ctx.createIndexBuffer(&global_ctx, indicies);
+}
+pub fn destroyIndexBuffer(ctx: *anyopaque, buffer: Interface.Renderer.IndexBuffer) void {
+    const window_ctx: *WindowContext = @ptrCast(@alignCast(ctx));
+    window_ctx.destroyIndexBuffer(buffer);
+}
+pub fn bindIndexBuffer(ctx: *anyopaque, buffer: Interface.Renderer.IndexBuffer) !void {
+    const window_ctx: *WindowContext = @ptrCast(@alignCast(ctx));
+    return window_ctx.bindIndexBuffer(buffer);
+}
 pub fn beginFrame(ctx: *anyopaque, frame: *Interface.Renderer.Frame) !void {
-    const window_ctx: *GraphicsContext.WindowContext =
+    const window_ctx: *WindowContext =
         @ptrCast(@alignCast(ctx));
     frame.state = &window_ctx.frame_state;
-    return window_ctx.beginFrame();
+    return window_ctx.beginFrame(&global_ctx);
 }
 
 pub fn bindPipeline(
     ctx: *anyopaque,
     pipeline: Interface.Renderer.GraphicsPipeline,
 ) !void {
-    const window_ctx: *GraphicsContext.WindowContext =
+    const window_ctx: *WindowContext =
         @ptrCast(@alignCast(ctx));
 
     return window_ctx.bindPipeline(pipeline);
@@ -125,22 +157,22 @@ pub fn bindPipeline(
 
 pub fn draw(
     ctx: *anyopaque,
-    vertex_count: u32,
+    indicies_count: u32,
     instance_count: u32,
 ) !void {
-    const window_ctx: *GraphicsContext.WindowContext =
+    const window_ctx: *WindowContext =
         @ptrCast(@alignCast(ctx));
 
-    return window_ctx.draw(vertex_count, instance_count);
+    return window_ctx.draw(indicies_count, instance_count);
 }
 
 pub fn endFrame(ctx: *anyopaque) !void {
-    const window_ctx: *GraphicsContext.WindowContext =
+    const window_ctx: *WindowContext =
         @ptrCast(@alignCast(ctx));
 
     return window_ctx.endFrame();
 }
 pub fn present(ctx: *anyopaque) !void {
-    const window_ctx: *GraphicsContext.WindowContext = @ptrCast(@alignCast(ctx));
+    const window_ctx: *WindowContext = @ptrCast(@alignCast(ctx));
     return window_ctx.present();
 }

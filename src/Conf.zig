@@ -8,8 +8,9 @@ pub var GlobalAllocator: ?std.mem.Allocator = null;
 pub var NumberOfThreads: usize = 3;
 /// MUST BE A POWER OF 2
 pub var QueueCapacity_EVEN: usize = 8;
+pub const renderer_extensions = false;
 
-pub inline fn is_singlethreaded() bool {
+pub fn is_singlethreaded() bool {
     return BuildOptions.singlethreaded or NumberOfThreads == 0;
 }
 

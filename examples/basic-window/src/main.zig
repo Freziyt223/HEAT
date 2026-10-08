@@ -9,10 +9,31 @@ const Window = GUI.Window;
 const Renderer = GUI.Renderer;
 const ShaderModule = Renderer.ShaderModule;
 const GraphicsPipeline = Renderer.GraphicsPipeline;
-
+const VertexBuffer = Renderer.VertexBuffer;
+const IndexBuffer = Renderer.IndexBuffer;
 const vert = @embedFile("shaders/vert.spirv");
 const frag = @embedFile("shaders/frag.spirv");
+const VertexType = Renderer.MakeVertexType(2, f32, 3, f32);
+const verticies = [_]VertexType{
+    .{
+        .position = .{ -0.5, -0.5 },
+        .colour = .{ 1.0, 0.0, 0.0 },
+    },
+    .{
+        .position = .{ 0.5, -0.5 },
+        .colour = .{ 0.0, 1.0, 0.0 },
+    },
+    .{
+        .position = .{ 0.5, 0.5 },
+        .colour = .{ 0.0, 0.0, 1.0 },
+    },
+    .{
+        .position = .{ -0.5, 0.5 },
+        .colour = .{ 1.0, 1.0, 1.0 },
+    },
+};
 
+const indicies = [_]u16{ 0, 1, 2, 2, 3, 0 };
 pub var Allocator: TrackingAllocator = undefined;
 
 const WindowContext = struct {
@@ -25,10 +46,14 @@ const WindowContext = struct {
     },
 
     graphicsPipeline: ?GraphicsPipeline = null,
+    index_buffer: ?IndexBuffer = null,
+    vertex_buffer: ?VertexBuffer = null,
 
     is_window_available: atomic(bool) = .init(false),
     is_renderer_available: atomic(bool) = .init(false),
     is_graphics_pipeline_available: atomic(bool) = .init(false),
+    is_index_buffer_available: atomic(bool) = .init(false),
+    is_vertex_buffer_available: atomic(bool) = .init(false),
     is_shaders_available: atomic(bool) = .init(false),
 
     is_destroyed: atomic(bool) = .init(false),
@@ -79,15 +104,24 @@ const WindowContext = struct {
             try renderer.createShaderModule(frag);
 
         errdefer renderer.destroyShaderModule(fragment_shader);
-
+        const bindings = [_]Renderer.VertexBinding{VertexType.getBindingDescription()};
+        const attributes = VertexType.getAttributeDescription();
         const pipeline =
             try renderer.createGraphicsPipeline(.{
                 .vertex_shader = vertex_shader,
                 .fragment_shader = fragment_shader,
+                .vertex_input = .{
+                    .bindings = &bindings,
+                    .attributes = &attributes,
+                },
+                .front_face = .clockwise,
             });
 
         errdefer renderer.destroyGraphicsPipeline(pipeline);
-
+        const index_buffer =
+            try renderer.createIndexBuffer(u16, indicies[0..]);
+        const buffer =
+            try renderer.createVertexBuffer(VertexType, verticies[0..]);
         self.window = window;
         self.renderer = renderer;
 
@@ -97,11 +131,15 @@ const WindowContext = struct {
         };
 
         self.graphicsPipeline = pipeline;
+        self.index_buffer = index_buffer;
+        self.vertex_buffer = buffer;
 
         self.is_window_available.store(true, .release);
         self.is_renderer_available.store(true, .release);
         self.is_shaders_available.store(true, .release);
         self.is_graphics_pipeline_available.store(true, .release);
+        self.is_index_buffer_available.store(true, .release);
+        self.is_vertex_buffer_available.store(true, .release);
 
         self.closing.store(false, .release);
         self.is_destroyed.store(false, .release);
@@ -313,14 +351,18 @@ const ThreadContext = struct {
 
         const renderer = ctx.renderer orelse return;
 
-        if (!ctx.is_graphics_pipeline_available.load(.acquire)) {
+        if (!ctx.is_graphics_pipeline_available.load(.acquire) or !ctx.is_vertex_buffer_available.load(.acquire)) {
             return;
         }
         const pipeline = ctx.graphicsPipeline orelse return;
+        const index_buffer = ctx.index_buffer orelse return;
+        const vertex_buffer = ctx.vertex_buffer orelse return;
         var frame = try renderer.beginFrame();
 
         try frame.bindPipeline(pipeline);
-        try frame.draw(3, 1);
+        try frame.bindIndexBuffer(index_buffer);
+        try frame.bindVertexBuffer(vertex_buffer);
+        try frame.draw(indicies.len, 1);
         try frame.end();
         try frame.present();
     }

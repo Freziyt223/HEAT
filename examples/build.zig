@@ -22,7 +22,7 @@ const examples = [_]Example{
 
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseFast });
+    const optimize = b.option(std.builtin.OptimizeMode, "Optimize", "Specify optimize mode") orelse .Debug;
 
     for (examples[0..]) |ex| {
         const binaries = try ex.build_fn(b, target, optimize);

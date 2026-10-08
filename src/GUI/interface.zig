@@ -21,6 +21,12 @@ createShaderModule: *const fn (*anyopaque, []const u8) anyerror!Renderer.ShaderM
 destroyShaderModule: *const fn (*anyopaque, Renderer.ShaderModule) void,
 createGraphicsPipeline: *const fn (*anyopaque, Renderer.GraphicsPipelineCreateInfo) anyerror!Renderer.GraphicsPipeline,
 destroyGraphicsPipeline: *const fn (*anyopaque, Renderer.GraphicsPipeline) void,
+createVertexBuffer: *const fn (*anyopaque, []const u8) anyerror!Renderer.VertexBuffer,
+destroyVertexBuffer: *const fn (*anyopaque, Renderer.VertexBuffer) void,
+bindVertexBuffer: *const fn (*anyopaque, Renderer.VertexBuffer) anyerror!void,
+createIndexBuffer: *const fn (*anyopaque, []const u8) anyerror!Renderer.IndexBuffer,
+destroyIndexBuffer: *const fn (*anyopaque, Renderer.IndexBuffer) void,
+bindIndexBuffer: *const fn (*anyopaque, Renderer.IndexBuffer) anyerror!void,
 
 pub const Renderer = struct {
     window: *anyopaque,
@@ -45,6 +51,37 @@ pub const Renderer = struct {
             }
         };
     }
+    pub fn MakeVertexType(position_num: comptime_int, position_type: type, colour_num: comptime_int, colour_type: type) type {
+        return struct {
+            const This = @This();
+            position: @Vector(position_num, position_type),
+            colour: @Vector(colour_num, colour_type),
+
+            pub fn getBindingDescription() Renderer.VertexBinding {
+                const description = Renderer.VertexBinding{
+                    .binding = 0,
+                    .stride = @sizeOf(This),
+                    .input_rate = .vertex,
+                };
+                return description;
+            }
+            pub fn getAttributeDescription() [2]Renderer.VertexAttribute {
+                const descriptions = [2]Renderer.VertexAttribute{ .{
+                    .binding = 0,
+                    .location = 0,
+                    .format = .r32g32_sfloat,
+                    .offset = @offsetOf(This, "position"),
+                }, .{
+                    .binding = 0,
+                    .location = 1,
+                    .format = .r32g32b32_sfloat,
+                    .offset = @offsetOf(This, "colour"),
+                } };
+                return descriptions;
+            }
+        };
+    }
+
     pub const FrameState = enum(u8) {
         idle,
         recording,
@@ -55,16 +92,22 @@ pub const Renderer = struct {
         renderer: Renderer,
         state: *std.atomic.Value(FrameState),
 
-        pub fn bindPipeline(self: *Frame, graphicsPipeline: GraphicsPipeline) !void {
+        pub fn bindPipeline(self: *const Frame, graphicsPipeline: GraphicsPipeline) !void {
             return self.renderer.renderer.bindPipeline(self.renderer.ctx, graphicsPipeline);
         }
-        pub fn draw(self: *Frame, vertex_count: u32, instance_count: u32) !void {
-            return self.renderer.renderer.draw(self.renderer.ctx, vertex_count, instance_count);
+        pub fn bindIndexBuffer(self: *const Frame, buffer: IndexBuffer) !void {
+            return self.renderer.renderer.bindIndexBuffer(self.renderer.ctx, buffer);
         }
-        pub fn present(self: *Frame) !void {
+        pub fn bindVertexBuffer(self: *Frame, buffer: VertexBuffer) !void {
+            return self.renderer.renderer.bindVertexBuffer(self.renderer.ctx, buffer);
+        }
+        pub fn draw(self: *const Frame, indicies_count: u32, instance_count: u32) !void {
+            return self.renderer.renderer.draw(self.renderer.ctx, indicies_count, instance_count);
+        }
+        pub fn present(self: *const Frame) !void {
             return self.renderer.renderer.present(self.renderer.ctx);
         }
-        pub fn end(self: *Frame) !void {
+        pub fn end(self: *const Frame) !void {
             return self.renderer.renderer.endFrame(self.renderer.ctx);
         }
     };
@@ -74,6 +117,9 @@ pub const Renderer = struct {
     pub const Buffer = Handle(.buffer);
     pub const Image = Handle(.image);
     pub const PipelineLayout = Handle(.pipeline_layout);
+    pub const IndexBuffer = Handle(.index_buffer);
+    pub const VertexBuffer = Handle(.vertex_buffer);
+    pub const DescriptorSetLayout = struct {};
 
     pub fn deinit(self: Renderer) void {
         self.renderer.deinitWindow(self);
@@ -115,6 +161,8 @@ pub const Renderer = struct {
 
         topology: PrimitiveTopology = .triangle_list,
 
+        layout: CreatePipelineLayoutInfo = .{},
+
         cull_mode: CullMode = .back,
         front_face: FrontFace = .counter_clockwise,
 
@@ -148,20 +196,20 @@ pub const Renderer = struct {
     };
 
     pub const VertexFormat = enum {
-        float32,
-        float32x2,
-        float32x3,
-        float32x4,
+        r32_sfloat,
+        r32g32_sfloat,
+        r32g32b32_sfloat,
+        r32g32b32a32_sfloat,
 
-        uint32,
-        uint32x2,
-        uint32x3,
-        uint32x4,
+        r32_uint,
+        r32g32_uint,
+        r32g32b32_uint,
+        r32g32b32a32_uint,
 
-        sint32,
-        sint32x2,
-        sint32x3,
-        sint32x4,
+        r32_sint,
+        r32g32_sint,
+        r32g32b32_sint,
+        r32g32b32a32_sint,
     };
 
     pub const PrimitiveTopology = enum {
@@ -188,12 +236,71 @@ pub const Renderer = struct {
     pub const BlendState = struct {
         enabled: bool = false,
     };
+    pub const CreatePipelineLayoutInfo = struct {
+        descriptor_set_layouts: []const DescriptorSetLayout = &.{},
+        push_constants: []const PushConstantRange = &.{},
+    };
 
-    pub fn createGraphicsPipeline(self: Renderer, info: GraphicsPipelineCreateInfo) !GraphicsPipeline {
+    pub const DescriptorType = enum {
+        uniform_buffer,
+        storage_buffer,
+        sampler,
+        sampled_image,
+        combined_image_sampler,
+        storage_image,
+    };
+    pub const DescriptorSetLayoutCreateInfo = struct {
+        bindings: []const DescriptorBinding,
+    };
+    pub const DescriptorBinding = struct {
+        binding: u32,
+        descriptor_type: DescriptorType,
+        count: u32 = 1,
+        stages: ShaderStageFlags,
+    };
+    pub const ShaderStage = enum {
+        vertex,
+        fragment,
+        geometry,
+        tessellation_control,
+        tessellation_evaluation,
+        compute,
+    };
+
+    pub const ShaderStageFlags = packed struct {
+        vertex: bool = false,
+        fragment: bool = false,
+        geometry: bool = false,
+        tessellation_control: bool = false,
+        tessellation_evaluation: bool = false,
+        compute: bool = false,
+    };
+
+    pub const PushConstantRange = struct {
+        offset: u32 = 0,
+        size: u32,
+        stages: ShaderStageFlags,
+    };
+
+    pub fn createGraphicsPipeline(self: *const Renderer, info: GraphicsPipelineCreateInfo) !GraphicsPipeline {
         return self.renderer.createGraphicsPipeline(self.ctx, info);
     }
-    pub fn destroyGraphicsPipeline(self: Renderer, pipeline: GraphicsPipeline) void {
+    pub fn destroyGraphicsPipeline(self: *const Renderer, pipeline: GraphicsPipeline) void {
         self.renderer.destroyGraphicsPipeline(self.ctx, pipeline);
+    }
+
+    pub fn createVertexBuffer(self: *const Renderer, comptime VertexType: type, verticies: []const VertexType) !VertexBuffer {
+        return self.renderer.createVertexBuffer(self.ctx, std.mem.sliceAsBytes(verticies));
+    }
+    pub fn destroyVertexBuffer(self: *const Renderer, buffer: VertexBuffer) void {
+        self.renderer.destroyVertexBuffer(self.ctx, buffer);
+    }
+
+    pub fn createIndexBuffer(self: *const Renderer, comptime IndexType: type, indicies: []const IndexType) !IndexBuffer {
+        return self.renderer.createIndexBuffer(self.ctx, std.mem.sliceAsBytes(indicies));
+    }
+    pub fn destroyIndexBuffer(self: *const Renderer, buffer: IndexBuffer) void {
+        self.renderer.destroyIndexBuffer(self.ctx, buffer);
     }
 };
 

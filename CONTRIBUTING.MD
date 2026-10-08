@@ -31,11 +31,11 @@ You can do following by making an Issue on github:
 
 To add your code suggestions do following:
 1. Create a branch from *main* like this:
-`git checkout issue_type/your-issue`
+`git checkout -b issue_type/your-issue`
 Example:
-`git checkout feature/glfw_windowing`
+`git checkout -b feature/glfw_windowing`
 or
-`git checkout fix/io_writer`
+`git checkout -b fix/io_writer`
 
 2. Make your changes and run `zig build` to make sure your code builds correctly
 3. Commit changes by running:

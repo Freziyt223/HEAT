@@ -186,6 +186,8 @@ pub fn addExecutable(b: *std.Build, config: ExecutableConfig) ![]*std.Build.Step
                 } else if (opts.build_vulkan and opts.renderer == .vulkan) {
                     const vulkan_zig = b.dependency("vulkan_zig", .{
                         .registry = b.dependency("vulkan_headers", .{}).path("registry/vk.xml"),
+                        .target = target,
+                        .optimize = optimize,
                     }).module("vulkan-zig");
                     const vulkan = b.createModule(.{
                         .root_source_file = b.path("src/GUI/vulkan/main.zig"),
