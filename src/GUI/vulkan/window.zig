@@ -28,6 +28,9 @@ present_queue: vulkan.Queue,
 shader_modules: std.ArrayListUnmanaged(ShaderResource) = .empty,
 
 graphics_pipelines: std.ArrayListUnmanaged(GraphicsPipelineResource) = .empty,
+descriptor_set_layouts: std.ArrayListUnmanaged(DescriptorSetLayoutResource) = .empty,
+descriptor_pools: std.ArrayListUnmanaged(DescriptorPoolResource) = .empty,
+descriptor_sets: std.ArrayListUnmanaged(DescriptorSetResource) = .empty,
 
 index_buffer: std.ArrayListUnmanaged(IndexBufferResource) = .empty,
 vertex_buffers: std.ArrayListUnmanaged(VertexBufferResource) = .empty,
@@ -90,6 +93,20 @@ pub const ShaderResource = struct {
 pub const GraphicsPipelineResource = struct {
     handle: vulkan.Pipeline = .null_handle,
     layout: vulkan.PipelineLayout = .null_handle,
+    generation: u32 = 1,
+};
+pub const DescriptorSetLayoutResource = struct {
+    handle: vulkan.DescriptorSetLayout = .null_handle,
+    generation: u32 = 1,
+};
+pub const DescriptorPoolResource = struct {
+    handle: vulkan.DescriptorPool = .null_handle,
+    generation: u32 = 1,
+};
+pub const DescriptorSetResource = struct {
+    handle: vulkan.DescriptorSet = .null_handle,
+    pool_index: u32,
+    pool_generation: u32,
     generation: u32 = 1,
 };
 pub const VertexBufferResource = struct {
@@ -202,6 +219,13 @@ pub fn deinit(self: *Self, global: *GraphicsContext) void {
         }
     }
 
+    for (self.descriptor_pools.items) |item| {
+        if (item.handle != .null_handle) self.device.device.destroyDescriptorPool(item.handle, null);
+    }
+    for (self.descriptor_set_layouts.items) |item| {
+        if (item.handle != .null_handle) self.device.device.destroyDescriptorSetLayout(item.handle, null);
+    }
+
     for (self.shader_modules.items) |item| {
         if (item.handle != .null_handle) {
             self.device.device.destroyShaderModule(item.handle, null);
@@ -229,6 +253,9 @@ pub fn deinit(self: *Self, global: *GraphicsContext) void {
     }
 
     self.graphics_pipelines.deinit(self.allocator);
+    self.descriptor_set_layouts.deinit(self.allocator);
+    self.descriptor_pools.deinit(self.allocator);
+    self.descriptor_sets.deinit(self.allocator);
     self.shader_modules.deinit(self.allocator);
     self.index_buffer.deinit(self.allocator);
     self.vertex_buffers.deinit(self.allocator);
@@ -971,16 +998,30 @@ pub fn createGraphicsPipeline(self: *Self, info: Interface.Renderer.GraphicsPipe
             .p_dynamic_states = &dynamic_states,
         };
 
+    const set_layouts = try self.allocator.alloc(vulkan.DescriptorSetLayout, info.layout.descriptor_set_layouts.len);
+    defer self.allocator.free(set_layouts);
+    for (info.layout.descriptor_set_layouts, set_layouts) |handle, *native| {
+        native.* = (try self.getDescriptorSetLayout(handle)).handle;
+    }
+
+    const push_constants = try self.allocator.alloc(vulkan.PushConstantRange, info.layout.push_constants.len);
+    defer self.allocator.free(push_constants);
+    for (info.layout.push_constants, push_constants) |source, *native| {
+        native.* = .{
+            .stage_flags = shaderStages(source.stages),
+            .offset = source.offset,
+            .size = source.size,
+        };
+    }
+
     const layout =
         try self.device.device.createPipelineLayout(
             &.{
                 .s_type = .pipeline_layout_create_info,
-
-                .set_layout_count = 0,
-                .p_set_layouts = null,
-
-                .push_constant_range_count = 0,
-                .p_push_constant_ranges = null,
+                .set_layout_count = @intCast(set_layouts.len),
+                .p_set_layouts = if (set_layouts.len > 0) set_layouts.ptr else null,
+                .push_constant_range_count = @intCast(push_constants.len),
+                .p_push_constant_ranges = if (push_constants.len > 0) push_constants.ptr else null,
             },
             null,
         );
@@ -1044,6 +1085,122 @@ pub fn createGraphicsPipeline(self: *Self, info: Interface.Renderer.GraphicsPipe
         .index = index,
         .generation = self.graphics_pipelines.items[index].generation,
     };
+}
+
+// ============================================================
+// Descriptor sets
+// ============================================================
+
+pub fn createDescriptorSetLayout(self: *Self, info: Interface.Renderer.DescriptorSetLayoutCreateInfo) !Interface.Renderer.DescriptorSetLayout {
+    const bindings = try self.allocator.alloc(vulkan.DescriptorSetLayoutBinding, info.bindings.len);
+    defer self.allocator.free(bindings);
+    for (info.bindings, bindings) |source, *native| {
+        native.* = .{
+            .binding = source.binding,
+            .descriptor_type = descriptorType(source.descriptor_type),
+            .descriptor_count = source.count,
+            .stage_flags = shaderStages(source.stages),
+        };
+    }
+    const native = try self.device.device.createDescriptorSetLayout(&.{
+        .s_type = .descriptor_set_layout_create_info,
+        .binding_count = @intCast(bindings.len),
+        .p_bindings = if (bindings.len > 0) bindings.ptr else null,
+    }, null);
+    errdefer self.device.device.destroyDescriptorSetLayout(native, null);
+    const index: u32 = @intCast(self.descriptor_set_layouts.items.len);
+    try self.descriptor_set_layouts.append(self.allocator, .{ .handle = native });
+    return .{ .index = index, .generation = self.descriptor_set_layouts.items[index].generation };
+}
+
+pub fn destroyDescriptorSetLayout(self: *Self, handle: Interface.Renderer.DescriptorSetLayout) void {
+    const resource = self.getDescriptorSetLayout(handle) catch return;
+    self.device.device.destroyDescriptorSetLayout(resource.handle, null);
+    resource.handle = .null_handle;
+    resource.generation +%= 1;
+}
+
+pub fn createDescriptorPool(self: *Self, info: Interface.Renderer.DescriptorPoolCreateInfo) !Interface.Renderer.DescriptorPool {
+    if (info.max_sets == 0) return error.InvalidDescriptorPoolSize;
+    const sizes = try self.allocator.alloc(vulkan.DescriptorPoolSize, info.pool_sizes.len);
+    defer self.allocator.free(sizes);
+    for (info.pool_sizes, sizes) |source, *native| {
+        native.* = .{ .type = descriptorType(source.descriptor_type), .descriptor_count = source.count };
+    }
+    const native = try self.device.device.createDescriptorPool(&.{
+        .s_type = .descriptor_pool_create_info,
+        .flags = .{ .free_descriptor_set_bit = true },
+        .max_sets = info.max_sets,
+        .pool_size_count = @intCast(sizes.len),
+        .p_pool_sizes = if (sizes.len > 0) sizes.ptr else null,
+    }, null);
+    errdefer self.device.device.destroyDescriptorPool(native, null);
+    const index: u32 = @intCast(self.descriptor_pools.items.len);
+    try self.descriptor_pools.append(self.allocator, .{ .handle = native });
+    return .{ .index = index, .generation = self.descriptor_pools.items[index].generation };
+}
+
+pub fn destroyDescriptorPool(self: *Self, handle: Interface.Renderer.DescriptorPool) void {
+    const resource = self.getDescriptorPool(handle) catch return;
+    self.device.device.destroyDescriptorPool(resource.handle, null);
+    resource.handle = .null_handle;
+    resource.generation +%= 1;
+    for (self.descriptor_sets.items) |*set| {
+        if (set.pool_index == handle.index and set.pool_generation == handle.generation) {
+            set.handle = .null_handle;
+            set.generation +%= 1;
+        }
+    }
+}
+
+pub fn allocateDescriptorSets(self: *Self, pool_handle: Interface.Renderer.DescriptorPool, layouts: []const Interface.Renderer.DescriptorSetLayout, allocator: std.mem.Allocator) ![]Interface.Renderer.DescriptorSet {
+    if (layouts.len == 0) return allocator.alloc(Interface.Renderer.DescriptorSet, 0);
+    const pool = try self.getDescriptorPool(pool_handle);
+    const native_layouts = try self.allocator.alloc(vulkan.DescriptorSetLayout, layouts.len);
+    defer self.allocator.free(native_layouts);
+    for (layouts, native_layouts) |layout, *native| native.* = (try self.getDescriptorSetLayout(layout)).handle;
+
+    const native_sets = try self.allocator.alloc(vulkan.DescriptorSet, layouts.len);
+    errdefer self.allocator.free(native_sets);
+    const handles = try allocator.alloc(Interface.Renderer.DescriptorSet, layouts.len);
+    errdefer allocator.free(handles);
+    try self.descriptor_sets.ensureUnusedCapacity(self.allocator, layouts.len);
+    try self.device.device.allocateDescriptorSets(pool.handle, &.{
+        .s_type = .descriptor_set_allocate_info,
+        .descriptor_pool = pool.handle,
+        .descriptor_set_count = @intCast(layouts.len),
+        .p_set_layouts = native_layouts.ptr,
+    }, native_sets.ptr);
+    errdefer self.device.device.freeDescriptorSets(pool.handle, native_sets) catch {};
+
+    for (native_sets, 0..) |native, i| {
+        const index: u32 = @intCast(self.descriptor_sets.items.len);
+        self.descriptor_sets.appendAssumeCapacity(.{
+            .handle = native,
+            .pool_index = pool_handle.index,
+            .pool_generation = pool_handle.generation,
+        });
+        handles[i] = .{ .index = index, .generation = self.descriptor_sets.items[index].generation };
+    }
+    return handles;
+}
+
+pub fn freeDescriptorSets(self: *Self, pool_handle: Interface.Renderer.DescriptorPool, handles: []const Interface.Renderer.DescriptorSet) !void {
+    if (handles.len == 0) return;
+    const pool = try self.getDescriptorPool(pool_handle);
+    const native_sets = try self.allocator.alloc(vulkan.DescriptorSet, handles.len);
+    defer self.allocator.free(native_sets);
+    for (handles, native_sets) |handle, *native| {
+        const resource = try self.getDescriptorSet(handle);
+        if (resource.pool_index != pool_handle.index or resource.pool_generation != pool_handle.generation) return error.DescriptorSetPoolMismatch;
+        native.* = resource.handle;
+    }
+    try self.device.device.freeDescriptorSets(pool.handle, native_sets);
+    for (handles) |handle| {
+        const resource = try self.getDescriptorSet(handle);
+        resource.handle = .null_handle;
+        resource.generation +%= 1;
+    }
 }
 
 pub fn destroyGraphicsPipeline(self: *Self, pipeline: Interface.Renderer.GraphicsPipeline) void {
@@ -1429,6 +1586,27 @@ fn getGraphicsPipeline(self: *const Self, handle: Interface.Renderer.GraphicsPip
     return resource;
 }
 
+fn getDescriptorSetLayout(self: *const Self, handle: Interface.Renderer.DescriptorSetLayout) !*DescriptorSetLayoutResource {
+    if (handle.index >= self.descriptor_set_layouts.items.len) return error.InvalidDescriptorSetLayout;
+    const resource = &self.descriptor_set_layouts.items[handle.index];
+    if (resource.generation != handle.generation or resource.handle == .null_handle) return error.InvalidDescriptorSetLayout;
+    return resource;
+}
+
+fn getDescriptorPool(self: *const Self, handle: Interface.Renderer.DescriptorPool) !*DescriptorPoolResource {
+    if (handle.index >= self.descriptor_pools.items.len) return error.InvalidDescriptorPool;
+    const resource = &self.descriptor_pools.items[handle.index];
+    if (resource.generation != handle.generation or resource.handle == .null_handle) return error.InvalidDescriptorPool;
+    return resource;
+}
+
+fn getDescriptorSet(self: *const Self, handle: Interface.Renderer.DescriptorSet) !*DescriptorSetResource {
+    if (handle.index >= self.descriptor_sets.items.len) return error.InvalidDescriptorSet;
+    const resource = &self.descriptor_sets.items[handle.index];
+    if (resource.generation != handle.generation or resource.handle == .null_handle) return error.InvalidDescriptorSet;
+    return resource;
+}
+
 fn getVertexBuffer(self: *const Self, handle: Interface.Renderer.VertexBuffer) !*VertexBufferResource {
     if (handle.index >= self.vertex_buffers.items.len) return error.InvalidVertexBuffer;
 
@@ -1449,6 +1627,28 @@ fn getIndexBuffer(self: *const Self, handle: Interface.Renderer.IndexBuffer) !*I
         return error.InvalidIndexBuffer;
 
     return resource;
+}
+
+fn descriptorType(value: Interface.Renderer.DescriptorType) vulkan.DescriptorType {
+    return switch (value) {
+        .uniform_buffer => .uniform_buffer,
+        .storage_buffer => .storage_buffer,
+        .sampler => .sampler,
+        .sampled_image => .sampled_image,
+        .combined_image_sampler => .combined_image_sampler,
+        .storage_image => .storage_image,
+    };
+}
+
+fn shaderStages(value: Interface.Renderer.ShaderStageFlags) vulkan.ShaderStageFlags {
+    return .{
+        .vertex_bit = value.vertex,
+        .fragment_bit = value.fragment,
+        .geometry_bit = value.geometry,
+        .tessellation_control_bit = value.tessellation_control,
+        .tessellation_evaluation_bit = value.tessellation_evaluation,
+        .compute_bit = value.compute,
+    };
 }
 
 // ============================================================
@@ -1679,6 +1879,22 @@ pub fn bindVertexBuffer(
         0,
         &.{resource.handle},
         &.{0},
+    );
+}
+
+pub fn bindDescriptorSets(self: *Self, pipeline: Interface.Renderer.GraphicsPipeline, first_set: u32, sets: []const Interface.Renderer.DescriptorSet) !void {
+    if (self.frame_state.load(.acquire) != .recording) return error.FrameIsNotReady;
+    const pipeline_resource = try self.getGraphicsPipeline(pipeline);
+    const native_sets = try self.allocator.alloc(vulkan.DescriptorSet, sets.len);
+    defer self.allocator.free(native_sets);
+    for (sets, native_sets) |handle, *native| native.* = (try self.getDescriptorSet(handle)).handle;
+    self.device.device.cmdBindDescriptorSets(
+        self.command_buffer,
+        .graphics,
+        pipeline_resource.layout,
+        first_set,
+        native_sets,
+        null,
     );
 }
 

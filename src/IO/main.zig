@@ -13,6 +13,19 @@ pub fn init(IO: std.Io) !void {
 pub fn deinit() void {}
 
 pub fn print(comptime fmt: []const u8, args: anytype) std.Io.Writer.Error!void {
+    return printFmt(fmt, args);
+}
+
+/// Writes a comptime-known message without running the formatter.
+pub fn printStatic(comptime message: []const u8) std.Io.Writer.Error!void {
+    var buf: [1024]u8 = undefined;
+    var stdout_writer = std.Io.File.stdout().writer(Io, buf[0..]);
+    try stdout_writer.interface.writeAll(message);
+    try stdout_writer.interface.flush();
+}
+
+/// Formats into a stack buffer and writes the result to stdout.
+pub fn printFmt(comptime fmt: []const u8, args: anytype) std.Io.Writer.Error!void {
     var buf: [1024]u8 = undefined;
     var stdout_writer = std.Io.File.stdout().writer(Io, buf[0..]);
     try stdout_writer.interface.print(fmt, args);
@@ -27,7 +40,7 @@ pub fn warn(comptime fmt: []const u8, args: anytype, err: anyerror) std.Io.Write
     var buf: [1024]u8 = undefined;
     var stdout_writer = std.Io.File.stderr().writer(Io, buf[0..]);
     try stdout_writer.interface.print(fmt, args);
-    try stdout_writer.interface.print("Error name: {}\n", .{@errorName(err)});
+    try stdout_writer.interface.print("Error: {s}\n", .{@errorName(err)});
     try stdout_writer.interface.flush();
     if (@errorReturnTrace()) |trace| {
         std.debug.dumpStackTrace(trace);

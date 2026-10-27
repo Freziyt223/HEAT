@@ -33,6 +33,13 @@ const interface = Interface{
     .createIndexBuffer = @ptrCast(&createIndexBuffer),
     .destroyIndexBuffer = &destroyIndexBuffer,
     .bindIndexBuffer = @ptrCast(&bindIndexBuffer),
+    .createDescriptorSetLayout = @ptrCast(&createDescriptorSetLayout),
+    .destroyDescriptorSetLayout = &destroyDescriptorSetLayout,
+    .createDescriptorPool = @ptrCast(&createDescriptorPool),
+    .destroyDescriptorPool = &destroyDescriptorPool,
+    .allocateDescriptorSets = @ptrCast(&allocateDescriptorSets),
+    .freeDescriptorSets = @ptrCast(&freeDescriptorSets),
+    .bindDescriptorSets = @ptrCast(&bindDescriptorSets),
 };
 
 pub fn getInterface() Interface {
@@ -137,6 +144,34 @@ pub fn destroyIndexBuffer(ctx: *anyopaque, buffer: Interface.Renderer.IndexBuffe
 pub fn bindIndexBuffer(ctx: *anyopaque, buffer: Interface.Renderer.IndexBuffer) !void {
     const window_ctx: *WindowContext = @ptrCast(@alignCast(ctx));
     return window_ctx.bindIndexBuffer(buffer);
+}
+pub fn createDescriptorSetLayout(ctx: *anyopaque, info: Interface.Renderer.DescriptorSetLayoutCreateInfo) !Interface.Renderer.DescriptorSetLayout {
+    const window_ctx: *WindowContext = @ptrCast(@alignCast(ctx));
+    return window_ctx.createDescriptorSetLayout(info);
+}
+pub fn destroyDescriptorSetLayout(ctx: *anyopaque, layout: Interface.Renderer.DescriptorSetLayout) void {
+    const window_ctx: *WindowContext = @ptrCast(@alignCast(ctx));
+    window_ctx.destroyDescriptorSetLayout(layout);
+}
+pub fn createDescriptorPool(ctx: *anyopaque, info: Interface.Renderer.DescriptorPoolCreateInfo) !Interface.Renderer.DescriptorPool {
+    const window_ctx: *WindowContext = @ptrCast(@alignCast(ctx));
+    return window_ctx.createDescriptorPool(info);
+}
+pub fn destroyDescriptorPool(ctx: *anyopaque, pool: Interface.Renderer.DescriptorPool) void {
+    const window_ctx: *WindowContext = @ptrCast(@alignCast(ctx));
+    window_ctx.destroyDescriptorPool(pool);
+}
+pub fn allocateDescriptorSets(ctx: *anyopaque, pool: Interface.Renderer.DescriptorPool, layouts: []const Interface.Renderer.DescriptorSetLayout, allocator: std.mem.Allocator) ![]Interface.Renderer.DescriptorSet {
+    const window_ctx: *WindowContext = @ptrCast(@alignCast(ctx));
+    return window_ctx.allocateDescriptorSets(pool, layouts, allocator);
+}
+pub fn freeDescriptorSets(ctx: *anyopaque, pool: Interface.Renderer.DescriptorPool, sets: []const Interface.Renderer.DescriptorSet) !void {
+    const window_ctx: *WindowContext = @ptrCast(@alignCast(ctx));
+    return window_ctx.freeDescriptorSets(pool, sets);
+}
+pub fn bindDescriptorSets(ctx: *anyopaque, pipeline: Interface.Renderer.GraphicsPipeline, first_set: u32, sets: []const Interface.Renderer.DescriptorSet) !void {
+    const window_ctx: *WindowContext = @ptrCast(@alignCast(ctx));
+    return window_ctx.bindDescriptorSets(pipeline, first_set, sets);
 }
 pub fn beginFrame(ctx: *anyopaque, frame: *Interface.Renderer.Frame) !void {
     const window_ctx: *WindowContext =

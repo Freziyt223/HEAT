@@ -27,6 +27,13 @@ bindVertexBuffer: *const fn (*anyopaque, Renderer.VertexBuffer) anyerror!void,
 createIndexBuffer: *const fn (*anyopaque, []const u8) anyerror!Renderer.IndexBuffer,
 destroyIndexBuffer: *const fn (*anyopaque, Renderer.IndexBuffer) void,
 bindIndexBuffer: *const fn (*anyopaque, Renderer.IndexBuffer) anyerror!void,
+createDescriptorSetLayout: *const fn (*anyopaque, Renderer.DescriptorSetLayoutCreateInfo) anyerror!Renderer.DescriptorSetLayout,
+destroyDescriptorSetLayout: *const fn (*anyopaque, Renderer.DescriptorSetLayout) void,
+createDescriptorPool: *const fn (*anyopaque, Renderer.DescriptorPoolCreateInfo) anyerror!Renderer.DescriptorPool,
+destroyDescriptorPool: *const fn (*anyopaque, Renderer.DescriptorPool) void,
+allocateDescriptorSets: *const fn (*anyopaque, Renderer.DescriptorPool, []const Renderer.DescriptorSetLayout, std.mem.Allocator) anyerror![]Renderer.DescriptorSet,
+freeDescriptorSets: *const fn (*anyopaque, Renderer.DescriptorPool, []const Renderer.DescriptorSet) anyerror!void,
+bindDescriptorSets: *const fn (*anyopaque, Renderer.GraphicsPipeline, u32, []const Renderer.DescriptorSet) anyerror!void,
 
 pub const Renderer = struct {
     window: *anyopaque,
@@ -101,6 +108,9 @@ pub const Renderer = struct {
         pub fn bindVertexBuffer(self: *Frame, buffer: VertexBuffer) !void {
             return self.renderer.renderer.bindVertexBuffer(self.renderer.ctx, buffer);
         }
+        pub fn bindDescriptorSets(self: *const Frame, pipeline: GraphicsPipeline, first_set: u32, sets: []const DescriptorSet) !void {
+            return self.renderer.renderer.bindDescriptorSets(self.renderer.ctx, pipeline, first_set, sets);
+        }
         pub fn draw(self: *const Frame, indicies_count: u32, instance_count: u32) !void {
             return self.renderer.renderer.draw(self.renderer.ctx, indicies_count, instance_count);
         }
@@ -119,7 +129,9 @@ pub const Renderer = struct {
     pub const PipelineLayout = Handle(.pipeline_layout);
     pub const IndexBuffer = Handle(.index_buffer);
     pub const VertexBuffer = Handle(.vertex_buffer);
-    pub const DescriptorSetLayout = struct {};
+    pub const DescriptorSetLayout = Handle(.descriptor_set_layout);
+    pub const DescriptorPool = Handle(.descriptor_pool);
+    pub const DescriptorSet = Handle(.descriptor_set);
 
     pub fn deinit(self: Renderer) void {
         self.renderer.deinitWindow(self);
@@ -252,6 +264,14 @@ pub const Renderer = struct {
     pub const DescriptorSetLayoutCreateInfo = struct {
         bindings: []const DescriptorBinding,
     };
+    pub const DescriptorPoolCreateInfo = struct {
+        max_sets: u32,
+        pool_sizes: []const DescriptorPoolSize,
+    };
+    pub const DescriptorPoolSize = struct {
+        descriptor_type: DescriptorType,
+        count: u32,
+    };
     pub const DescriptorBinding = struct {
         binding: u32,
         descriptor_type: DescriptorType,
@@ -301,6 +321,25 @@ pub const Renderer = struct {
     }
     pub fn destroyIndexBuffer(self: *const Renderer, buffer: IndexBuffer) void {
         self.renderer.destroyIndexBuffer(self.ctx, buffer);
+    }
+
+    pub fn createDescriptorSetLayout(self: *const Renderer, info: DescriptorSetLayoutCreateInfo) !DescriptorSetLayout {
+        return self.renderer.createDescriptorSetLayout(self.ctx, info);
+    }
+    pub fn destroyDescriptorSetLayout(self: *const Renderer, layout: DescriptorSetLayout) void {
+        self.renderer.destroyDescriptorSetLayout(self.ctx, layout);
+    }
+    pub fn createDescriptorPool(self: *const Renderer, info: DescriptorPoolCreateInfo) !DescriptorPool {
+        return self.renderer.createDescriptorPool(self.ctx, info);
+    }
+    pub fn destroyDescriptorPool(self: *const Renderer, pool: DescriptorPool) void {
+        self.renderer.destroyDescriptorPool(self.ctx, pool);
+    }
+    pub fn allocateDescriptorSets(self: *const Renderer, pool: DescriptorPool, layouts: []const DescriptorSetLayout, allocator: std.mem.Allocator) ![]DescriptorSet {
+        return self.renderer.allocateDescriptorSets(self.ctx, pool, layouts, allocator);
+    }
+    pub fn freeDescriptorSets(self: *const Renderer, pool: DescriptorPool, sets: []const DescriptorSet) !void {
+        return self.renderer.freeDescriptorSets(self.ctx, pool, sets);
     }
 };
 

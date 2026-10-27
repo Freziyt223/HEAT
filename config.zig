@@ -22,4 +22,17 @@ pub var build_directx: bool = false;
 pub const renderer_enum = enum { automatic, vulkan, opengl, directx, bgfx, none };
 pub var renderer: renderer_enum = .vulkan;
 
+/// Targets produced when `-Dmultitarget=true` is enabled. Each query must set
+/// both `os_tag` and `cpu_arch`.
+var target_buffer: [2]std.Target.Query = .{
+    .{ .cpu_arch = .x86_64, .os_tag = .windows },
+    .{ .cpu_arch = .x86_64, .os_tag = .linux },
+};
+pub var targets: std.ArrayList(std.Target.Query) = blk: {
+    var list = std.ArrayList(std.Target.Query).initBuffer(&target_buffer);
+    list.items = &target_buffer;
+    break :blk list;
+};
+pub var multitarget: bool = true;
+
 pub fn default_profile() void {}
